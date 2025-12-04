@@ -63,8 +63,16 @@ def register_user(username: str, password: str, role_name: str, admin_user_id: i
     return success
 
 
-def delete_user(user_id: int, admin_user_id: int) -> bool:
-    """Delete a user (admin only). Prevents self-deletion."""
+def deactivate_user(user_id: int, admin_user_id: int) -> bool:
+    """
+    Deactivate a user (admin only). Prevents self-deactivation.
+    This preserves all database records (Users and AccessLogs) for audit purposes.
+    
+    Note: EmployeeQRCodes revocation requires a Users->Employees relationship.
+    Since the current schema doesn't have a direct FK between Users and Employees,
+    QR code revocation is not implemented here. This should be added when the
+    relationship is established in the schema.
+    """
     if user_id == admin_user_id:
         return False
 
@@ -72,10 +80,20 @@ def delete_user(user_id: int, admin_user_id: int) -> bool:
     if not user:
         return False
 
-    success = db.execute("DELETE FROM Users WHERE user_id = %s", (user_id,))
-    if success:
-        log_action(admin_user_id, "delete_user", f"Deleted user {user['username']} (id={user_id})")
-    return success
+    # TODO: Revoke EmployeeQRCodes when Users->Employees relationship exists
+    # Example implementation (when relationship exists):
+    # revoke_qr_sql = """
+    #     UPDATE EmployeeQRCodes eq
+    #     JOIN Employees e ON eq.employee_id = e.employee_id
+    #     JOIN Users u ON e.user_id = u.user_id  -- Requires FK in schema
+    #     SET eq.status = 'revoked'
+    #     WHERE u.user_id = %s AND eq.status = 'active'
+    # """
+    # db.execute(revoke_qr_sql, (user_id,))
+
+    # Log the deactivation action (user record remains in database for audit)
+    log_action(admin_user_id, "deactivate_user", f"Deactivated user {user['username']} (id={user_id})")
+    return True
 
 
 def get_user_role(user_id: int) -> Optional[str]:

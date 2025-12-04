@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from backend.services.auth_service import (
     login,
     register_user,
-    delete_user,
+    deactivate_user,
     get_user_role,
 )
 from backend.utils.auth_dependency import get_current_user_id
@@ -56,17 +56,21 @@ def register_user_endpoint(
     return {"message": f"User {payload.username} created successfully"}
 
 
-@router.delete("/delete-user/{user_id}")
-def delete_user_endpoint(
+@router.patch("/deactivate-user/{user_id}")
+def deactivate_user_endpoint(
     user_id: int,
     current_user_id: int = Depends(get_current_user_id),
 ):
-    """Admin-only endpoint to delete users."""
+    """
+    Admin-only endpoint to deactivate users.
+    This preserves all database records (Users and AccessLogs) for audit purposes.
+    Revokes all related EmployeeQRCodes while maintaining data integrity.
+    """
     role = get_user_role(current_user_id)
     if role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
 
-    if not delete_user(user_id, current_user_id):
-        raise HTTPException(status_code=400, detail="Unable to delete user")
+    if not deactivate_user(user_id, current_user_id):
+        raise HTTPException(status_code=400, detail="Unable to deactivate user (user not found or self-deactivation attempted)")
 
-    return {"message": f"User {user_id} deleted successfully"}
+    return {"message": f"User {user_id} deactivated successfully. All records preserved for audit."}

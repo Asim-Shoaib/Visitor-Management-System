@@ -1,12 +1,13 @@
-# Visitor Management System – backend
+## Visitor Management System – backend
 
-Phase 3:
+Phase 4:
 
 Current scope:
 
 - Database schema and connection
 - Basic authentication (users / roles)
 - Visitor registration and lookup
+- Visit management (create/update/active list)
 
 ---
 
@@ -21,7 +22,8 @@ visitor_management_system/
 │   ├── api/
 │   │   ├── __init__.py
 │   │   ├── auth_api.py
-│   │   └── visitor_api.py
+│   │   ├── visitor_api.py
+│   │   └── visit_api.py
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py
@@ -30,7 +32,8 @@ visitor_management_system/
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── auth_service.py
-│   │   └── visitor_service.py
+│   │   ├── visitor_service.py
+│   │   └── visit_service.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── auth_dependency.py
@@ -111,18 +114,74 @@ uvicorn backend.main:app --reload
 
 The server listens on `http://localhost:8000`.
 
-Useful endpoints so far:
+---
 
-- `POST /auth/login`
-- `POST /auth/register-user`
-- `DELETE /auth/delete-user/{id}`
-- `POST /visitor/add-visitor`
-- `GET /visitor/search-visitor?cnic=...` or `?visitor_id=...`
+## Implemented Features (Phase 1–4)
+
+- **Database foundation (Phase 1)**
+  - MySQL schema in `backend/database/schema.sql` (must not be modified).
+  - Connection helper in `backend/database/connection.py`.
+  - CNIC / username / password / name / contact validators in `backend/utils/validator.py`.
+  - Access logging helper in `backend/utils/db_logger.py` (writes to `AccessLogs`).
+
+- **Authentication system (Phase 2)**
+  - Users & roles backed by `Users` and `Roles` tables.
+  - Simple token format returned on login: `user_id:role`.
+  - `Authorization: Bearer <user_id>:<role>` header is parsed by `backend/utils/auth_dependency.py`.
+  - Auth actions logged into `AccessLogs` via `log_action`.
+  - User deactivation (not deletion) preserves all records for audit purposes.
+
+- **Visitor CRUD (Phase 3)**
+  - Visitor registration and lookup mapped to `Visitors` table.
+  - CNIC format enforced in code (`validator.validate_cnic`) and by DB `CHECK` constraint.
+  - Duplicate `cnic` prevented via DB `UNIQUE` and pre-insert check.
+
+- **Visit management (Phase 4)**
+  - Visit creation mapped to `Visits`:
+    - Validates `visitor_id` ∈ `Visitors`, `site_id` ∈ `Sites`.
+    - `host_employee_id` is optional but, if provided, must exist in `Employees`.
+    - New visits start with status `pending`.
+  - Visit status updates enforce allowed transitions:
+    - `pending → checked_in` (sets `checkin_time`).
+    - `pending → denied` (no timestamps).
+    - `checked_in → checked_out` (sets `checkout_time`).
+  - Active visits query:
+    - Returns `pending` and `checked_in` visits with joined visitor and site data.
+  - All visit actions are logged to `AccessLogs` with the requesting `user_id`.
+
+---
+
+## API Endpoints (Phase 1–4)
+
+- **Auth (`/auth`, Phase 2)**
+  - `POST /auth/login`
+  - `POST /auth/register-user` (admin only; requires `Authorization` header)
+  - `PATCH /auth/deactivate-user/{user_id}` (admin only; requires `Authorization` header)
+    - Deactivates a user while preserving all database records (Users and AccessLogs) for audit purposes.
+    - Prevents self-deactivation.
+    - Logs the deactivation action to `AccessLogs`.
+
+- **Visitors (`/visitor`, Phase 3)**
+  - `POST /visitor/add-visitor`
+  - `GET /visitor/search-visitor?cnic=...` or `?visitor_id=...`
+
+- **Visits (`/visit`, Phase 4)**
+  - `POST /visit/create-visit`
+    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Body: `{ "visitor_id": int, "site_id": int, "purpose_details": str | null, "host_employee_id": int | null }`.
+  - `PATCH /visit/update-status/{visit_id}`
+    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Body: `{ "status": "pending" | "checked_in" | "checked_out" | "denied" }`.
+    - Enforces described status transition rules.
+  - `GET /visit/active-visits`
+    - Public read endpoint returning pending / checked-in visits with visitor + site info.
 
 ---
 
 ## Notes
 
-- Auth endpoints return a simple token in the form `user_id:role`. You can pass it as a Bearer header if needed later.
-- Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
+- **Tokens**: auth endpoints still return a simple token in the form `user_id:role`. Pass it as a Bearer header for protected endpoints.
+- **CNIC format**: Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
+- **Schema**: `backend/database/schema.sql` defines all tables and must remain the single source of truth for the DB structure (no in-app schema changes).
+- **User management**: Users are never deleted from the database. The `PATCH /auth/deactivate-user/{user_id}` endpoint deactivates users while preserving all records (Users and AccessLogs) for audit purposes.
 
