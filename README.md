@@ -1,15 +1,15 @@
-# Visitor Management System – Phase 1
+# Visitor Management System – Phase 2 (Authentication)
 
-Phase 1:
+Phase 1 **and** Phase 2:
 
-1. **Database schema** that matches the required specification exactly.
-2. **Database connection infrastructure** for connecting to MySQL.
-3. **Configuration** files that store connection details in `config.ini`.
-4. **Core utility helpers** (validation + database logging) used across future phases.
+1. **Phase 1:** Database schema, connection layer, configuration, and shared utilities.
+2. **Phase 2:** Authentication service, FastAPI endpoints (`/auth/login`, `/auth/register-user`, `/auth/delete-user/{id}`), and a minimal FastAPI application you can start locally.
+
+Later phases (visitor management, QR code features, frontend, etc.)
 
 ---
 
-## Project Structure (Phase 1 Only)
+## Project Structure (Phase 1–2)
 
 ```
 visitor_management_system/
@@ -17,12 +17,20 @@ visitor_management_system/
 │   ├── __init__.py
 │   ├── config/
 │   │   └── config.ini
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── auth_api.py
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py
 │   │   └── schema.sql
+│   ├── main.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   └── auth_service.py
 │   └── utils/
 │       ├── __init__.py
+│       ├── auth_dependency.py
 │       ├── db_logger.py
 │       └── validator.py
 ├── requirements.txt
@@ -71,6 +79,9 @@ pip install -r requirements.txt
 
 `requirements.txt` currently includes:
 - `mysql-connector-python`
+- `fastapi`
+- `uvicorn`
+- `pydantic`
 
 ### 5. Test the Database Connection
 
@@ -86,7 +97,31 @@ print(result)
 
 ---
 
-## Included Utilities
+## Running the Authentication API
+
+1. Ensure the database is online and seeded (steps above).
+2. Start the FastAPI application:
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+This launches the API on `http://localhost:8000`.
+
+### Endpoints
+
+| Method | Endpoint                 | Description                                     |
+| ------ | ------------------------ | ----------------------------------------------- |
+| POST   | `/auth/login`            | Returns token + user info                       |
+| POST   | `/auth/register-user`    | Admin-only user creation                        |
+| DELETE | `/auth/delete-user/{id}` | Admin-only deletion (cannot delete yourself)    |
+
+Authentication uses a simple bearer token: `Bearer <user_id>:<role>`.  
+Use the `token` returned from `/auth/login` in the `Authorization` header for admin-only endpoints.
+
+---
+
+## Included Utilities & Services
 
 ### `backend/utils/validator.py`
 - CNIC validation (format `XXXXX-XXXXXXX-X`)
@@ -98,8 +133,17 @@ print(result)
 - Inserts action logs into the `AccessLogs` table.
 - Provides a reusable `log_action` helper that can be used by later services.
 
+### `backend/utils/db_logger.py`
+- Inserts action logs into the `AccessLogs` table.
+- Provides a reusable `log_action` helper that can be used by later services.
+
+### `backend/services/auth_service.py`
+- Password hashing (SHA256)
+- Login, register, delete operations
+- Role lookups and action logging
+
 ---
 
-## Next Steps (Beyond Phase 1)
+## Next Steps (Beyond Phase 2)
 
-All higher-level layers—services, APIs, frontend, QR features, email
+Visitor management, QR code flows, scanning, logs/export, email notifications, and the React frontend.

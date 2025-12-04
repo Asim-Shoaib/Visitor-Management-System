@@ -1,5 +1,72 @@
+# Environment
 .env
-# VS Code
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+ENV/
+env/
+.virtualenv/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Node (if using React frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+.pnp.js
+.next/
+out/
+build/
+
+# Database / local storage files
+*.sqlite3
+*.db
+*.sql dump
+*.bak
+
+# IDEs & editors
 .vscode/
 *.code-workspace
 .history/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs & debugging
+*.log
+logs/
+debug.log*
+operations.log*
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Other misc
+*.swp
+*.swo
+*.tmp
+*.temp
+*.orig
