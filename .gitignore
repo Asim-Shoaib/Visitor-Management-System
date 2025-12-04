@@ -1,72 +1,69 @@
-# Environment
+# Environment and secrets
 .env
 .env.*
 !.env.example
+backend/config/*.local.ini  # if you ever create local config versions
+*.pem
+*.key
 
-# Python cache
+# Python artifacts and cache
 __pycache__/
 *.py[cod]
-*$py.class
 *.pyo
 *.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
 
 # Virtual environments
 venv/
-ENV/
 env/
+ENV/
 .virtualenv/
-pip-wheel-metadata/
 *.egg-info/
 .eggs/
 dist/
 build/
 
-# Node (if using React frontend)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnp.*
-.pnp.js
-.next/
-out/
-build/
-
-# Database / local storage files
-*.sqlite3
-*.db
-*.sql dump
-*.bak
-
-# IDEs & editors
-.vscode/
-*.code-workspace
-.history/
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Logs & debugging
+# Logs and runtime generated files
 *.log
 logs/
+backend/logs/
 debug.log*
 operations.log*
 
-# Testing & coverage
-.pytest_cache/
-.coverage
-htmlcov/
-coverage.xml
-*.cover
-.hypothesis/
+# Local databases and backups
+*.db
+*.sqlite3
+*.sql
+*.sql dump
+*.bak
+*.backup
 
-# Other misc
-*.swp
-*.swo
-*.tmp
-*.temp
-*.orig
+# Generated QR or barcode files
+backend/generated_qr/
+frontend/generated_qr/
+frontend/public/qrcodes/
+*.png  # remove this if you plan to commit non-QR images, but QR images should be ignored
+
+# Node/React 
+node_modules/
+.next/
+out/
+build/
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+
+# IDE and editor settings
+.vscode/
+.idea/
+.history/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# OS generated junk
+.DS_Store
+Thumbs.db

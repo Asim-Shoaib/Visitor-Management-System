@@ -1,15 +1,16 @@
-# Visitor Management System – Phase 2 (Authentication)
+# Visitor Management System – backend
 
-Phase 1 **and** Phase 2:
+Phase 3:
 
-1. **Phase 1:** Database schema, connection layer, configuration, and shared utilities.
-2. **Phase 2:** Authentication service, FastAPI endpoints (`/auth/login`, `/auth/register-user`, `/auth/delete-user/{id}`), and a minimal FastAPI application you can start locally.
+Current scope:
 
-Later phases (visitor management, QR code features, frontend, etc.)
+- Database schema and connection
+- Basic authentication (users / roles)
+- Visitor registration and lookup
 
 ---
 
-## Project Structure (Phase 1–2)
+## Project Structure
 
 ```
 visitor_management_system/
@@ -19,7 +20,8 @@ visitor_management_system/
 │   │   └── config.ini
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── auth_api.py
+│   │   ├── auth_api.py
+│   │   └── visitor_api.py
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py
@@ -27,7 +29,8 @@ visitor_management_system/
 │   ├── main.py
 │   ├── services/
 │   │   ├── __init__.py
-│   │   └── auth_service.py
+│   │   ├── auth_service.py
+│   │   └── visitor_service.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── auth_dependency.py
@@ -97,7 +100,7 @@ print(result)
 
 ---
 
-## Running the Authentication API
+## Running the API
 
 1. Ensure the database is online and seeded (steps above).
 2. Start the FastAPI application:
@@ -106,44 +109,20 @@ print(result)
 uvicorn backend.main:app --reload
 ```
 
-This launches the API on `http://localhost:8000`.
+The server listens on `http://localhost:8000`.
 
-### Endpoints
+Useful endpoints so far:
 
-| Method | Endpoint                 | Description                                     |
-| ------ | ------------------------ | ----------------------------------------------- |
-| POST   | `/auth/login`            | Returns token + user info                       |
-| POST   | `/auth/register-user`    | Admin-only user creation                        |
-| DELETE | `/auth/delete-user/{id}` | Admin-only deletion (cannot delete yourself)    |
-
-Authentication uses a simple bearer token: `Bearer <user_id>:<role>`.  
-Use the `token` returned from `/auth/login` in the `Authorization` header for admin-only endpoints.
+- `POST /auth/login`
+- `POST /auth/register-user`
+- `DELETE /auth/delete-user/{id}`
+- `POST /visitor/add-visitor`
+- `GET /visitor/search-visitor?cnic=...` or `?visitor_id=...`
 
 ---
 
-## Included Utilities & Services
+## Notes
 
-### `backend/utils/validator.py`
-- CNIC validation (format `XXXXX-XXXXXXX-X`)
-- Contact number validation (basic length and character checks)
-- Name validation (length + non-empty)
-- Username/password validators for future use
+- Auth endpoints return a simple token in the form `user_id:role`. You can pass it as a Bearer header if needed later.
+- Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
 
-### `backend/utils/db_logger.py`
-- Inserts action logs into the `AccessLogs` table.
-- Provides a reusable `log_action` helper that can be used by later services.
-
-### `backend/utils/db_logger.py`
-- Inserts action logs into the `AccessLogs` table.
-- Provides a reusable `log_action` helper that can be used by later services.
-
-### `backend/services/auth_service.py`
-- Password hashing (SHA256)
-- Login, register, delete operations
-- Role lookups and action logging
-
----
-
-## Next Steps (Beyond Phase 2)
-
-Visitor management, QR code flows, scanning, logs/export, email notifications, and the React frontend.
