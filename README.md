@@ -1,6 +1,6 @@
 ## Visitor Management System – backend
 
-Phase 4:
+Phase 5:
 
 Current scope:
 
@@ -8,6 +8,7 @@ Current scope:
 - Basic authentication (users / roles)
 - Visitor registration and lookup
 - Visit management (create/update/active list)
+- QR code generation (employee & visitor) with email delivery
 
 ---
 
@@ -23,7 +24,8 @@ visitor_management_system/
 │   │   ├── __init__.py
 │   │   ├── auth_api.py
 │   │   ├── visitor_api.py
-│   │   └── visit_api.py
+│   │   ├── visit_api.py
+│   │   └── qr_api.py
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py
@@ -33,7 +35,8 @@ visitor_management_system/
 │   │   ├── __init__.py
 │   │   ├── auth_service.py
 │   │   ├── visitor_service.py
-│   │   └── visit_service.py
+│   │   ├── visit_service.py
+│   │   └── qr_service.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── auth_dependency.py
@@ -41,7 +44,8 @@ visitor_management_system/
 │       └── validator.py
 ├── requirements.txt
 ├── setup_database.sql
-└── README.md
+├── README.md
+└── backend/generated_qr/  (generated QR code images, gitignored)
 ```
 
 ---
@@ -64,9 +68,9 @@ mysql -u root -p < setup_database.sql
 
 This inserts the mandatory roles plus a sample admin user (`admin` / `admin123`) and placeholder records for departments, sites, and employees.
 
-### 3. Configure Database Credentials
+### 3. Configure Database Credentials and Email
 
-Edit `backend/config/config.ini` and set your MySQL connection parameters:
+Edit `backend/config/config.ini` and set your MySQL connection parameters and email settings:
 
 ```ini
 [database]
@@ -75,7 +79,19 @@ port = 3306
 user = root
 password = your_password
 database = Visitor_Management_System
+
+[email]
+smtp_server = smtp.gmail.com
+smtp_port = 587
+sender_email = your_email@gmail.com
+sender_password = your_password
+
+[app]
+secret_key = your-secret-key-here
+qr_code_expiry_hours = 24
 ```
+
+**Note**: For Gmail, you may need to use an "App Password" instead of your regular password. Email functionality will be skipped if credentials are not configured.
 
 ### 4. Install Dependencies
 
@@ -88,6 +104,8 @@ pip install -r requirements.txt
 - `fastapi`
 - `uvicorn`
 - `pydantic`
+- `qrcode[pil]` (QR code generation)
+- `email-validator` (email validation)
 
 ### 5. Test the Database Connection
 
@@ -116,7 +134,7 @@ The server listens on `http://localhost:8000`.
 
 ---
 
-## Implemented Features (Phase 1–4)
+## Implemented Features (Phase 1–5)
 
 - **Database foundation (Phase 1)**
   - MySQL schema in `backend/database/schema.sql` (must not be modified).
@@ -149,9 +167,26 @@ The server listens on `http://localhost:8000`.
     - Returns `pending` and `checked_in` visits with joined visitor and site data.
   - All visit actions are logged to `AccessLogs` with the requesting `user_id`.
 
+- **QR Code Management (Phase 5)**
+  - Employee QR generation (permanent):
+    - Maps to `EmployeeQRCodes` table.
+    - QR codes stored as PNG files in `backend/generated_qr/`.
+    - No expiry date (permanent QR codes).
+    - Status defaults to `active`.
+  - Visitor QR generation (temporary):
+    - Maps to `VisitorQRCodes` table.
+    - Linked to a valid `visit_id` from `Visits`.
+    - Expiry date set based on `qr_code_expiry_hours` config (default 24 hours).
+    - QR codes emailed as downloadable links (not base64/inline).
+    - Status defaults to `active`.
+  - QR code download:
+    - Public endpoint to download visitor QR code images.
+    - Validates QR code is active and not expired.
+  - All QR generation actions logged to `AccessLogs`.
+
 ---
 
-## API Endpoints (Phase 1–4)
+## API Endpoints (Phase 1–5)
 
 - **Auth (`/auth`, Phase 2)**
   - `POST /auth/login`
@@ -176,6 +211,23 @@ The server listens on `http://localhost:8000`.
   - `GET /visit/active-visits`
     - Public read endpoint returning pending / checked-in visits with visitor + site info.
 
+- **QR Codes (`/qr`, Phase 5)**
+  - `POST /qr/generate-employee`
+    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Body: `{ "employee_id": int }`.
+    - Returns `emp_qr_id`, `code_value`, `employee_id`, `employee_name`.
+    - Generates permanent QR code for employee (no expiry).
+  - `POST /qr/generate-visitor`
+    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Body: `{ "visit_id": int, "recipient_email": "email@example.com" }`.
+    - Returns `visitor_qr_id`, `code_value`, `visit_id`, `visitor_name`, `download_url`, `expiry_date`, `email_sent`.
+    - Generates temporary QR code for visitor visit (with expiry).
+    - Emails QR code as downloadable link to recipient.
+  - `GET /qr/download/{visitor_qr_id}`
+    - Public endpoint (no authentication required).
+    - Returns PNG image file of visitor QR code.
+    - Validates QR code is active and not expired.
+
 ---
 
 ## Notes
@@ -184,4 +236,6 @@ The server listens on `http://localhost:8000`.
 - **CNIC format**: Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
 - **Schema**: `backend/database/schema.sql` defines all tables and must remain the single source of truth for the DB structure (no in-app schema changes).
 - **User management**: Users are never deleted from the database. The `PATCH /auth/deactivate-user/{user_id}` endpoint deactivates users while preserving all records (Users and AccessLogs) for audit purposes.
+- **QR codes**: QR code images are stored in `backend/generated_qr/` directory (gitignored). Employee QR codes are permanent (no expiry), while visitor QR codes have configurable expiry (default 24 hours). Visitor QR codes are emailed as downloadable links, not embedded as base64.
+- **Email configuration**: Email functionality requires SMTP credentials in `config.ini`. If not configured, QR generation will succeed but email sending will be skipped (logged in response).
 

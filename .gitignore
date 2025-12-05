@@ -67,3 +67,6 @@ yarn-debug.log*
 # OS generated junk
 .DS_Store
 Thumbs.db
+
+# Ignore config files with sensitive info
+backend/config/config.ini
