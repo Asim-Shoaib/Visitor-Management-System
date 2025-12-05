@@ -7,6 +7,7 @@ from backend.services.scan_service import (
     scan_visitor_qr,
     get_active_alerts,
     get_employee_late_count,
+    verify_qr_code,
 )
 from backend.utils.auth_dependency import get_current_user_id
 from backend.utils.validator import validate_id_format, validate_scan_status
@@ -50,6 +51,17 @@ class ScanVisitorRequest(BaseModel):
         if not validate_scan_status(v):
             raise ValueError("scan_status must be 'signin' or 'signout'")
         return v
+
+
+class VerifyQRRequest(BaseModel):
+    qr_code: str
+    
+    @field_validator('qr_code')
+    @classmethod
+    def validate_qr_code(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("qr_code cannot be empty")
+        return v.strip()
 
 
 @router.post("/employee")
@@ -160,6 +172,28 @@ def get_employee_late_count_endpoint(
     
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
+
+
+@router.post("/verify")
+def verify_qr_endpoint(
+    payload: VerifyQRRequest,
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """
+    Verify a QR code and determine if it belongs to an employee or visitor.
+    Requires JWT authentication.
+    Validates QR code status (valid, expired, revoked, invalid).
+    Returns type, status, and linked information.
+    """
+    result = verify_qr_code(payload.qr_code, current_user_id)
+    
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to verify QR code"
+        )
     
     return result
 

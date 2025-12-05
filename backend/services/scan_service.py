@@ -377,3 +377,293 @@ def get_employee_late_count(employee_id: int) -> Dict:
         "threshold_reached": late_count >= 3,
     }
 
+
+def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
+    """
+    Verify a QR code and determine if it belongs to an employee or visitor.
+    Returns validation status and linked information.
+    """
+    if not qr_code or not qr_code.strip():
+        return None
+    
+    qr_code = qr_code.strip()
+    
+    # Check if it's an employee QR code (starts with EMP_)
+    if qr_code.startswith("EMP_"):
+        qr_record = db.fetchone("""
+            SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, e.name as employee_name
+            FROM EmployeeQRCodes eqr
+            JOIN Employees e ON eqr.employee_id = e.employee_id
+            WHERE eqr.code_value = %s
+        """, (qr_code,))
+        
+        if not qr_record:
+            log_action(scanned_by_user_id, "verify_qr", f"Invalid employee QR code: {qr_code}")
+            return {
+                "type": "employee",
+                "status": "invalid",
+                "qr_code": qr_code,
+                "message": "QR code not found"
+            }
+        
+        if qr_record["status"] != "active":
+            log_action(scanned_by_user_id, "verify_qr", f"Revoked employee QR code: {qr_code}")
+            return {
+                "type": "employee",
+                "status": "revoked",
+                "qr_code": qr_code,
+                "employee_id": qr_record["employee_id"],
+                "employee_name": qr_record["employee_name"],
+                "message": "QR code has been revoked"
+            }
+        
+        log_action(scanned_by_user_id, "verify_qr", f"Verified employee QR code: {qr_code} (employee_id={qr_record['employee_id']})")
+        return {
+            "type": "employee",
+            "status": "valid",
+            "qr_code": qr_code,
+            "emp_qr_id": qr_record["emp_qr_id"],
+            "employee_id": qr_record["employee_id"],
+            "employee_name": qr_record["employee_name"],
+        }
+    
+    # Check if it's a visitor QR code (starts with VIS_)
+    elif qr_code.startswith("VIS_"):
+        qr_record = db.fetchone("""
+            SELECT vqr.visitor_qr_id, vqr.visit_id, vqr.status, vqr.expiry_date,
+                   v.visitor_id, vis.full_name as visitor_name
+            FROM VisitorQRCodes vqr
+            JOIN Visits v ON vqr.visit_id = v.visit_id
+            JOIN Visitors vis ON v.visitor_id = vis.visitor_id
+            WHERE vqr.code_value = %s
+        """, (qr_code,))
+        
+        if not qr_record:
+            log_action(scanned_by_user_id, "verify_qr", f"Invalid visitor QR code: {qr_code}")
+            return {
+                "type": "visitor",
+                "status": "invalid",
+                "qr_code": qr_code,
+                "message": "QR code not found"
+            }
+        
+        # Check if expired
+        if qr_record["expiry_date"] and datetime.now() > qr_record["expiry_date"]:
+            log_action(scanned_by_user_id, "verify_qr", f"Expired visitor QR code: {qr_code}")
+            return {
+                "type": "visitor",
+                "status": "expired",
+                "qr_code": qr_code,
+                "visitor_qr_id": qr_record["visitor_qr_id"],
+                "visit_id": qr_record["visit_id"],
+                "visitor_id": qr_record["visitor_id"],
+                "visitor_name": qr_record["visitor_name"],
+                "expiry_date": qr_record["expiry_date"].isoformat(),
+                "message": "QR code has expired"
+            }
+        
+        # Check if revoked
+        if qr_record["status"] != "active":
+            log_action(scanned_by_user_id, "verify_qr", f"Revoked visitor QR code: {qr_code}")
+            return {
+                "type": "visitor",
+                "status": "revoked",
+                "qr_code": qr_code,
+                "visitor_qr_id": qr_record["visitor_qr_id"],
+                "visit_id": qr_record["visit_id"],
+                "visitor_id": qr_record["visitor_id"],
+                "visitor_name": qr_record["visitor_name"],
+                "message": "QR code has been revoked"
+            }
+        
+        log_action(scanned_by_user_id, "verify_qr", f"Verified visitor QR code: {qr_code} (visit_id={qr_record['visit_id']})")
+        return {
+            "type": "visitor",
+            "status": "valid",
+            "qr_code": qr_code,
+            "visitor_qr_id": qr_record["visitor_qr_id"],
+            "visit_id": qr_record["visit_id"],
+            "visitor_id": qr_record["visitor_id"],
+            "visitor_name": qr_record["visitor_name"],
+        }
+    
+    # Unknown QR code format
+    log_action(scanned_by_user_id, "verify_qr", f"Unknown QR code format: {qr_code}")
+    return {
+        "type": "unknown",
+        "status": "invalid",
+        "qr_code": qr_code,
+        "message": "Unknown QR code format"
+    }
+
+
+def visitor_checkin(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
+    """
+    Check in a visitor using their QR code.
+    Updates Visits.status to 'checked_in' and sets checkin_time.
+    Prevents double check-in.
+    """
+    # Verify QR code first
+    verification = verify_qr_code(qr_code, scanned_by_user_id)
+    
+    if not verification or verification["type"] != "visitor":
+        return None
+    
+    if verification["status"] != "valid":
+        return {
+            "success": False,
+            "error": verification.get("message", "Invalid QR code"),
+            "status": verification["status"]
+        }
+    
+    visit_id = verification["visit_id"]
+    
+    # Check current visit status
+    visit = db.fetchone("""
+        SELECT status, checkin_time FROM Visits WHERE visit_id = %s
+    """, (visit_id,))
+    
+    if not visit:
+        return None
+    
+    # Prevent double check-in
+    if visit["status"] == "checked_in":
+        log_action(scanned_by_user_id, "visitor_checkin", f"Attempted double check-in for visit_id={visit_id}")
+        return {
+            "success": False,
+            "error": "Visitor is already checked in",
+            "visit_id": visit_id,
+            "current_status": visit["status"]
+        }
+    
+    # Only allow check-in from pending status
+    if visit["status"] != "pending":
+        log_action(scanned_by_user_id, "visitor_checkin", f"Invalid status for check-in: visit_id={visit_id}, status={visit['status']}")
+        return {
+            "success": False,
+            "error": f"Cannot check in visitor with status: {visit['status']}",
+            "visit_id": visit_id,
+            "current_status": visit["status"]
+        }
+    
+    # Update visit status to checked_in
+    checkin_time = datetime.now()
+    update_sql = """
+        UPDATE Visits
+        SET status = 'checked_in', checkin_time = %s
+        WHERE visit_id = %s
+    """
+    success = db.execute(update_sql, (checkin_time, visit_id))
+    
+    if not success:
+        return None
+    
+    # Insert scan log
+    visitor_qr_id = verification["visitor_qr_id"]
+    scan_sql = """
+        INSERT INTO VisitorScanLogs (visitor_qr_id, scan_status, timestamp)
+        VALUES (%s, 'signin', %s)
+    """
+    db.execute(scan_sql, (visitor_qr_id, checkin_time))
+    
+    # Log action
+    log_action(
+        scanned_by_user_id,
+        "visitor_checkin",
+        f"Checked in visitor (visit_id={visit_id}, visitor_name={verification['visitor_name']})"
+    )
+    
+    return {
+        "success": True,
+        "visit_id": visit_id,
+        "visitor_name": verification["visitor_name"],
+        "checkin_time": checkin_time.isoformat(),
+        "status": "checked_in"
+    }
+
+
+def visitor_checkout(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
+    """
+    Check out a visitor using their QR code.
+    Updates Visits.status to 'checked_out' and sets checkout_time.
+    Prevents checkout before check-in.
+    """
+    # Verify QR code first
+    verification = verify_qr_code(qr_code, scanned_by_user_id)
+    
+    if not verification or verification["type"] != "visitor":
+        return None
+    
+    if verification["status"] != "valid":
+        return {
+            "success": False,
+            "error": verification.get("message", "Invalid QR code"),
+            "status": verification["status"]
+        }
+    
+    visit_id = verification["visit_id"]
+    
+    # Check current visit status
+    visit = db.fetchone("""
+        SELECT status, checkin_time, checkout_time FROM Visits WHERE visit_id = %s
+    """, (visit_id,))
+    
+    if not visit:
+        return None
+    
+    # Prevent checkout before check-in
+    if visit["status"] != "checked_in":
+        log_action(scanned_by_user_id, "visitor_checkout", f"Attempted checkout without check-in: visit_id={visit_id}, status={visit['status']}")
+        return {
+            "success": False,
+            "error": f"Cannot check out visitor with status: {visit['status']}. Visitor must be checked in first.",
+            "visit_id": visit_id,
+            "current_status": visit["status"]
+        }
+    
+    # Prevent double checkout
+    if visit["status"] == "checked_out":
+        log_action(scanned_by_user_id, "visitor_checkout", f"Attempted double checkout for visit_id={visit_id}")
+        return {
+            "success": False,
+            "error": "Visitor is already checked out",
+            "visit_id": visit_id,
+            "current_status": visit["status"]
+        }
+    
+    # Update visit status to checked_out
+    checkout_time = datetime.now()
+    update_sql = """
+        UPDATE Visits
+        SET status = 'checked_out', checkout_time = %s
+        WHERE visit_id = %s
+    """
+    success = db.execute(update_sql, (checkout_time, visit_id))
+    
+    if not success:
+        return None
+    
+    # Insert scan log
+    visitor_qr_id = verification["visitor_qr_id"]
+    scan_sql = """
+        INSERT INTO VisitorScanLogs (visitor_qr_id, scan_status, timestamp)
+        VALUES (%s, 'signout', %s)
+    """
+    db.execute(scan_sql, (visitor_qr_id, checkout_time))
+    
+    # Log action
+    log_action(
+        scanned_by_user_id,
+        "visitor_checkout",
+        f"Checked out visitor (visit_id={visit_id}, visitor_name={verification['visitor_name']})"
+    )
+    
+    return {
+        "success": True,
+        "visit_id": visit_id,
+        "visitor_name": verification["visitor_name"],
+        "checkin_time": visit["checkin_time"].isoformat() if visit["checkin_time"] else None,
+        "checkout_time": checkout_time.isoformat(),
+        "status": "checked_out"
+    }
+

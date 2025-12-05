@@ -1,15 +1,16 @@
 ## Visitor Management System – backend
 
-Phase 6:
+Phase 7:
 
 Current scope:
 
 - Database schema and connection
-- Basic authentication (users / roles)
+- Basic authentication (users / roles) with JWT
 - Visitor registration and lookup
 - Visit management (create/update/active list)
 - QR code generation (employee & visitor) with email delivery
 - QR scanning, status updates, late arrival detection, and alerts
+- Visitor check-in/check-out workflows with QR verification
 
 ---
 
@@ -92,6 +93,7 @@ sender_password = your_password
 [app]
 secret_key = your-strong-secret-key-here-change-in-production
 qr_code_expiry_hours = 24
+base_url = http://localhost:8000
 ```
 
 **Note**: 
@@ -141,7 +143,7 @@ The server listens on `http://localhost:8000`.
 
 ---
 
-## Implemented Features (Phase 1–6)
+## Implemented Features (Phase 1–7)
 
 - **Database foundation (Phase 1)**
   - MySQL schema in `backend/database/schema.sql` (must not be modified).
@@ -213,9 +215,33 @@ The server listens on `http://localhost:8000`.
     - Alerts include visitor information and description.
     - All alerts preserved in `Alerts` table (no deletions).
 
+- **Visitor Check-In/Check-Out Workflows (Phase 7)**
+  - QR code verification:
+    - `POST /scan/verify` endpoint detects employee vs visitor QR codes.
+    - Validates QR code status (valid, expired, revoked, invalid).
+    - Returns type, status, and linked information.
+    - All verification attempts logged to `AccessLogs`.
+  - Visitor check-in:
+    - `POST /visitor/checkin` endpoint checks in visitors using QR code.
+    - Updates `Visits.status` to `checked_in` and sets `checkin_time`.
+    - Prevents double check-in (visitor must be in `pending` status).
+    - Inserts scan record into `VisitorScanLogs`.
+    - All check-ins logged to `AccessLogs`.
+  - Visitor check-out:
+    - `POST /visitor/checkout` endpoint checks out visitors using QR code.
+    - Updates `Visits.status` to `checked_out` and sets `checkout_time`.
+    - Prevents checkout before check-in (visitor must be `checked_in`).
+    - Prevents double checkout.
+    - Inserts scan record into `VisitorScanLogs`.
+    - All check-outs logged to `AccessLogs`.
+  - Database constraints enforced:
+    - Visitors cannot have multiple active visits simultaneously (pending or checked_in).
+    - QR codes cannot be used after expiry (validated in verify endpoint).
+    - All scanning operations create logs in scan tables.
+
 ---
 
-## API Endpoints (Phase 1–6)
+## API Endpoints (Phase 1–7)
 
 - **Auth (`/auth`, Phase 2)**
   - `POST /auth/login`
@@ -298,6 +324,35 @@ The server listens on `http://localhost:8000`.
     - Includes salary estimate based on recent scans.
     - Indicates if threshold (3+ late arrivals) is reached.
     - Returns 422 for invalid ID format, 401 for invalid/expired token.
+  - `POST /scan/verify`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Body: `{ "qr_code": "VIS_3_abc..." }` or `{ "qr_code": "EMP_1_xyz..." }`.
+    - Detects whether QR belongs to employee or visitor.
+    - Validates QR code status (valid, expired, revoked, invalid).
+    - Returns type, status, and linked information (employee_id or visitor_id).
+    - All verification attempts logged to `AccessLogs`.
+    - Returns 422 for invalid input format, 401 for invalid/expired token.
+
+- **Visitor Check-In/Check-Out (`/visitor`, Phase 7)**
+  - `POST /visitor/checkin`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Body: `{ "qr_code": "VIS_3_abc..." }`.
+    - Validates QR code format and status.
+    - Updates `Visits.status` to `checked_in` and sets `checkin_time`.
+    - Prevents double check-in (visitor must be in `pending` status).
+    - Inserts scan record into `VisitorScanLogs`.
+    - Returns success status, visit_id, visitor_name, checkin_time.
+    - Returns 422 for invalid QR format, 400 for business logic errors, 401 for invalid/expired token.
+  - `POST /visitor/checkout`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Body: `{ "qr_code": "VIS_3_abc..." }`.
+    - Validates QR code format and status.
+    - Updates `Visits.status` to `checked_out` and sets `checkout_time`.
+    - Prevents checkout before check-in (visitor must be `checked_in`).
+    - Prevents double checkout.
+    - Inserts scan record into `VisitorScanLogs`.
+    - Returns success status, visit_id, visitor_name, checkin_time, checkout_time.
+    - Returns 422 for invalid QR format, 400 for business logic errors, 401 for invalid/expired token.
 
 ---
 

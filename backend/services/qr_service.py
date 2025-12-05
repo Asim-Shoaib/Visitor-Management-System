@@ -76,6 +76,8 @@ Your visitor QR code has been generated and is ready for download.
 
 Download Link: {download_url}
 
+Click the link above or copy and paste it into your browser to download your QR code.
+
 This QR code will expire on: {expiry_date.strftime('%Y-%m-%d %H:%M:%S')}
 
 Please download and present this QR code at the security checkpoint.
@@ -169,16 +171,89 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
     Emails the QR code as a downloadable link.
     Returns dict with visitor_qr_id, code_value, download_url, or None on failure.
     """
-    # Validate visit exists and get visitor info
+    # First, check if visit exists (without JOIN to get better error info)
+    visit_check = db.fetchone("SELECT visit_id, visitor_id, status FROM Visits WHERE visit_id = %s", (visit_id,))
+    
+    if not visit_check:
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"Visit not found: visit_id={visit_id}"
+        )
+        return None
+    
+    # Check if visit status allows QR generation (should be pending or checked_in)
+    if visit_check["status"] not in ("pending", "checked_in"):
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"Visit status does not allow QR generation: visit_id={visit_id}, status={visit_check['status']}"
+        )
+        return None
+    
+    # Now get full visit info with visitor details
     visit = db.fetchone("""
-        SELECT v.visit_id, v.visitor_id, v.site_id, vis.full_name, vis.contact_number
+        SELECT v.visit_id, v.visitor_id, v.site_id, v.status, vis.full_name, vis.contact_number
         FROM Visits v
         JOIN Visitors vis ON v.visitor_id = vis.visitor_id
         WHERE v.visit_id = %s
     """, (visit_id,))
     
     if not visit:
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"Visitor not found for visit: visit_id={visit_id}, visitor_id={visit_check['visitor_id']}"
+        )
         return None
+    
+    # Check if there's already an active QR code for this visit
+    existing_qr = db.fetchone("""
+        SELECT visitor_qr_id, code_value, status, expiry_date
+        FROM VisitorQRCodes
+        WHERE visit_id = %s AND status = 'active'
+        ORDER BY issue_date DESC
+        LIMIT 1
+    """, (visit_id,))
+    
+    if existing_qr:
+        # Check if existing QR is expired
+        if existing_qr["expiry_date"] and datetime.now() > existing_qr["expiry_date"]:
+            # Mark old QR as expired and continue to create new one
+            db.execute(
+                "UPDATE VisitorQRCodes SET status = 'expired' WHERE visitor_qr_id = %s",
+                (existing_qr["visitor_qr_id"],)
+            )
+        else:
+            # Return existing active QR code info instead of creating duplicate
+            log_action(
+                requested_by_user_id,
+                "generate_visitor_qr_existing",
+                f"Using existing active QR code for visit_id={visit_id}, visitor_qr_id={existing_qr['visitor_qr_id']}"
+            )
+            
+            # Construct download URL for existing QR
+            download_path = f"/qr/download/{existing_qr['visitor_qr_id']}"
+            config = _get_config()
+            try:
+                base_url = config.get('app', 'base_url', fallback='')
+                if base_url:
+                    download_url = f"{base_url.rstrip('/')}{download_path}"
+                else:
+                    download_url = download_path
+            except:
+                download_url = download_path
+            
+            return {
+                "visitor_qr_id": existing_qr["visitor_qr_id"],
+                "code_value": existing_qr["code_value"],
+                "visit_id": visit_id,
+                "visitor_name": visit["full_name"],
+                "download_url": download_url,
+                "expiry_date": existing_qr["expiry_date"].isoformat() if existing_qr["expiry_date"] else None,
+                "email_sent": False,  # Email already sent for this QR
+                "existing": True,
+            }
     
     # Get expiry hours from config
     config = _get_config()
@@ -189,10 +264,19 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
     # Generate unique code value
     code_value = f"VIS_{visit_id}_{uuid.uuid4().hex[:12]}"
     
-    # Check for duplicate code_value
+    # Check for duplicate code_value (retry if collision)
     existing = db.fetchone("SELECT visitor_qr_id FROM VisitorQRCodes WHERE code_value = %s", (code_value,))
     if existing:
-        return None
+        # Retry with new UUID (very unlikely but handle it)
+        code_value = f"VIS_{visit_id}_{uuid.uuid4().hex[:12]}"
+        existing = db.fetchone("SELECT visitor_qr_id FROM VisitorQRCodes WHERE code_value = %s", (code_value,))
+        if existing:
+            log_action(
+                requested_by_user_id,
+                "generate_visitor_qr_failed",
+                f"Code value collision after retry for visit_id={visit_id}"
+            )
+            return None
     
     # Generate QR code image
     qr_dir = _ensure_qr_directory()
@@ -200,6 +284,11 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
     filepath = os.path.join(qr_dir, filename)
     
     if not _generate_qr_code_image(code_value, filepath):
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"Failed to generate QR code image for visit_id={visit_id}"
+        )
         return None
     
     # Insert into VisitorQRCodes (temporary, with expiry_date NOT NULL)
@@ -210,6 +299,11 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
     success = db.execute(insert_sql, (code_value, visit_id, issue_date, expiry_date))
     
     if not success:
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"Failed to insert QR code into database for visit_id={visit_id}, code_value={code_value}"
+        )
         # Clean up file if DB insert failed
         try:
             os.remove(filepath)
@@ -220,6 +314,11 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
     # Get the inserted visitor_qr_id
     qr_record = db.fetchone("SELECT visitor_qr_id FROM VisitorQRCodes WHERE code_value = %s", (code_value,))
     if not qr_record:
+        log_action(
+            requested_by_user_id,
+            "generate_visitor_qr_failed",
+            f"QR code inserted but could not retrieve visitor_qr_id for visit_id={visit_id}, code_value={code_value}"
+        )
         return None
     
     # Construct download URL
@@ -263,6 +362,48 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
         "download_path": download_path,  # Relative path for API clients
         "expiry_date": expiry_date.isoformat(),
         "email_sent": email_sent,
+    }
+
+
+def debug_visit_info(visit_id: int) -> Optional[Dict]:
+    """
+    Debug function to check visit and visitor information.
+    Helps diagnose QR generation issues.
+    """
+    # Check visit exists
+    visit = db.fetchone("SELECT * FROM Visits WHERE visit_id = %s", (visit_id,))
+    if not visit:
+        return {"error": f"Visit {visit_id} not found"}
+    
+    # Check visitor exists
+    visitor = db.fetchone("SELECT * FROM Visitors WHERE visitor_id = %s", (visit["visitor_id"],))
+    if not visitor:
+        return {
+            "error": f"Visitor {visit['visitor_id']} not found for visit {visit_id}",
+            "visit": visit
+        }
+    
+    # Check existing QR codes
+    qr_codes = db.fetchall(
+        "SELECT * FROM VisitorQRCodes WHERE visit_id = %s ORDER BY issue_date DESC",
+        (visit_id,)
+    )
+    
+    # Check if JOIN works
+    visit_with_visitor = db.fetchone("""
+        SELECT v.visit_id, v.visitor_id, v.status, vis.full_name, vis.visitor_id as v_visitor_id
+        FROM Visits v
+        JOIN Visitors vis ON v.visitor_id = vis.visitor_id
+        WHERE v.visit_id = %s
+    """, (visit_id,))
+    
+    return {
+        "visit": visit,
+        "visitor": visitor,
+        "existing_qr_codes": qr_codes,
+        "can_generate_qr": visit["status"] in ("pending", "checked_in"),
+        "join_test": visit_with_visitor is not None,
+        "join_result": visit_with_visitor,
     }
 
 

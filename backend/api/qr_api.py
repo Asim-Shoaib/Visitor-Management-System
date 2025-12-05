@@ -7,6 +7,7 @@ from backend.services.qr_service import (
     generate_employee_qr,
     generate_visitor_qr,
     get_visitor_qr_file,
+    debug_visit_info,
 )
 from backend.utils.auth_dependency import get_current_user_id
 from backend.utils.validator import validate_email, validate_id_format
@@ -104,12 +105,20 @@ def generate_visitor_qr_endpoint(
             detail="Invalid email format. Please provide a valid email address."
         )
     
-    result = generate_visitor_qr(payload.visit_id, payload.recipient_email, current_user_id)
+    try:
+        result = generate_visitor_qr(payload.visit_id, payload.recipient_email, current_user_id)
+    except Exception as e:
+        # Log the exception for debugging
+        print(f"Error generating visitor QR: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error generating visitor QR code: {str(e)}"
+        )
     
     if not result:
         raise HTTPException(
             status_code=400,
-            detail="Unable to generate visitor QR code (visit not found or generation failed)"
+            detail="Unable to generate visitor QR code. Possible reasons: visit not found, visitor not found, visit status does not allow QR generation, or QR generation failed. Check AccessLogs for details."
         )
     
     return {
@@ -122,6 +131,33 @@ def generate_visitor_qr_endpoint(
         "email_sent": result["email_sent"],
         "message": "Visitor QR code generated successfully"
     }
+
+
+@router.get("/debug/visit/{visit_id}")
+def debug_visit_endpoint(
+    visit_id: int,
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """
+    Debug endpoint to check visit and visitor information.
+    Requires JWT authentication.
+    Helps diagnose QR generation issues.
+    """
+    if not validate_id_format(visit_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid visit_id format. Must be a positive integer."
+        )
+    
+    result = debug_visit_info(visit_id)
+    
+    if not result:
+        raise HTTPException(status_code=500, detail="Debug function returned no result")
+    
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
 
 
 @router.get("/download/{visitor_qr_id}")

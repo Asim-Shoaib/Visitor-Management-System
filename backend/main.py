@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api import auth_api, visitor_api, visit_api, qr_api, scan_api
 
 
-app = FastAPI(title="Visitor Management System API", version="0.6.0")
+app = FastAPI(title="Visitor Management System API", version="0.7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,7 +23,7 @@ app.include_router(scan_api.router)
 
 @app.get("/")
 def root():
-    return {"message": "Visitor Management System API", "version": "0.6.0"}
+    return {"message": "Visitor Management System API", "version": "0.7.0"}
 
 
 @app.get("/health")

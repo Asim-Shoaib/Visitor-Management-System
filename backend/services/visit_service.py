@@ -41,6 +41,7 @@ def create_visit(
     - visitor_id and site_id must exist (FK integrity).
     - host_employee_id is optional but, if provided, must exist.
     - Initial status is 'pending'.
+    - Enforces constraint: Visitors cannot have multiple active visits simultaneously.
     """
     # Check visitor exists
     visitor = db.fetchone(
@@ -48,6 +49,25 @@ def create_visit(
     )
     if not visitor:
         return None
+    
+    # Enforce constraint: Check for existing active visits (pending or checked_in)
+    active_visit = db.fetchone("""
+        SELECT visit_id, status 
+        FROM Visits 
+        WHERE visitor_id = %s 
+          AND status IN ('pending', 'checked_in')
+        ORDER BY issue_date DESC
+        LIMIT 1
+    """, (visitor_id,))
+    
+    if active_visit:
+        # Log the attempt to create duplicate active visit
+        log_action(
+            requested_by_user_id,
+            "create_visit_blocked",
+            f"Blocked creation of duplicate active visit for visitor_id={visitor_id}. Existing active visit_id={active_visit['visit_id']} with status={active_visit['status']}"
+        )
+        return None  # Return None to indicate failure (caller should handle this)
 
     # Check site exists
     site = db.fetchone("SELECT site_id FROM Sites WHERE site_id = %s", (site_id,))
