@@ -1,18 +1,56 @@
 from fastapi import Header, HTTPException
 from typing import Optional
 
+from backend.utils.jwt_utils import get_user_from_token
+
 
 def get_current_user_id(authorization: Optional[str] = Header(default=None)) -> int:
     """
-    Extract the user_id from a simple Bearer token.
-    The token format is: Bearer <user_id>:<role>
+    Extract the user_id from a JWT Bearer token.
+    The token format is: Bearer <jwt_token>
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     try:
-        token = authorization.replace("Bearer ", "")
-        user_id_str = token.split(":")[0]
-        return int(user_id_str)
-    except (ValueError, IndexError):
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+        # Extract token from "Bearer <token>"
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header format. Expected: Bearer <token>")
+        
+        token = authorization.replace("Bearer ", "").strip()
+        
+        # Validate JWT token
+        user_info = get_user_from_token(token)
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        return user_info["user_id"]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")
+
+
+def get_current_user(authorization: Optional[str] = Header(default=None)) -> dict:
+    """
+    Extract full user information from a JWT Bearer token.
+    Returns dict with user_id, username, and role.
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
+    try:
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header format. Expected: Bearer <token>")
+        
+        token = authorization.replace("Bearer ", "").strip()
+        user_info = get_user_from_token(token)
+        
+        if not user_info:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        return user_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid authorization token: {str(e)}")

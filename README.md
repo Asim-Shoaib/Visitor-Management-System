@@ -1,6 +1,6 @@
 ## Visitor Management System – backend
 
-Phase 5:
+Phase 6:
 
 Current scope:
 
@@ -9,6 +9,7 @@ Current scope:
 - Visitor registration and lookup
 - Visit management (create/update/active list)
 - QR code generation (employee & visitor) with email delivery
+- QR scanning, status updates, late arrival detection, and alerts
 
 ---
 
@@ -25,7 +26,8 @@ visitor_management_system/
 │   │   ├── auth_api.py
 │   │   ├── visitor_api.py
 │   │   ├── visit_api.py
-│   │   └── qr_api.py
+│   │   ├── qr_api.py
+│   │   └── scan_api.py
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py
@@ -36,7 +38,8 @@ visitor_management_system/
 │   │   ├── auth_service.py
 │   │   ├── visitor_service.py
 │   │   ├── visit_service.py
-│   │   └── qr_service.py
+│   │   ├── qr_service.py
+│   │   └── scan_service.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── auth_dependency.py
@@ -68,9 +71,9 @@ mysql -u root -p < setup_database.sql
 
 This inserts the mandatory roles plus a sample admin user (`admin` / `admin123`) and placeholder records for departments, sites, and employees.
 
-### 3. Configure Database Credentials and Email
+### 3. Configure Database Credentials, Email, and JWT
 
-Edit `backend/config/config.ini` and set your MySQL connection parameters and email settings:
+Edit `backend/config/config.ini` and set your MySQL connection parameters, email settings, and JWT secret:
 
 ```ini
 [database]
@@ -87,11 +90,13 @@ sender_email = your_email@gmail.com
 sender_password = your_password
 
 [app]
-secret_key = your-secret-key-here
+secret_key = your-strong-secret-key-here-change-in-production
 qr_code_expiry_hours = 24
 ```
 
-**Note**: For Gmail, you may need to use an "App Password" instead of your regular password. Email functionality will be skipped if credentials are not configured.
+**Note**: 
+- For Gmail, you may need to use an "App Password" instead of your regular password. Email functionality will be skipped if credentials are not configured.
+- **JWT Secret Key**: Change `secret_key` to a strong, random string in production. This is used to sign and verify JWT tokens.
 
 ### 4. Install Dependencies
 
@@ -106,6 +111,8 @@ pip install -r requirements.txt
 - `pydantic`
 - `qrcode[pil]` (QR code generation)
 - `email-validator` (email validation)
+- `PyJWT` (JWT token generation and validation)
+- `python-jose[cryptography]` (JWT cryptography support)
 
 ### 5. Test the Database Connection
 
@@ -134,7 +141,7 @@ The server listens on `http://localhost:8000`.
 
 ---
 
-## Implemented Features (Phase 1–5)
+## Implemented Features (Phase 1–6)
 
 - **Database foundation (Phase 1)**
   - MySQL schema in `backend/database/schema.sql` (must not be modified).
@@ -184,14 +191,39 @@ The server listens on `http://localhost:8000`.
     - Validates QR code is active and not expired.
   - All QR generation actions logged to `AccessLogs`.
 
+- **QR Scanning & Status Updates (Phase 6)**
+  - Employee QR scanning:
+    - Inserts scan records into `EmployeeScanLogs` (signin/signout).
+    - Determines current sign-in status from last scan in `EmployeeScanLogs`.
+    - Detects late check-ins (after 9:10 AM).
+    - Maintains late count per employee (last 30 days).
+    - Sends email alert to admin when employee is late 3+ times in 30 days.
+    - Includes salary estimate calculation: `(checkout_time - checkin_time) × hourly_rate`.
+    - All scans logged to `AccessLogs`.
+  - Visitor QR scanning:
+    - Inserts scan records into `VisitorScanLogs` (signin/signout).
+    - Updates `Visits.status` accordingly:
+      - `pending → checked_in` on signin scan.
+      - `checked_in → checked_out` on signout scan.
+    - Validates QR code status and expiry date.
+    - Creates alert in `Alerts` table if QR is invalid, expired, or revoked.
+    - All scans logged to `AccessLogs`.
+  - Alert system:
+    - Alerts generated for invalid/expired/revoked visitor QR codes.
+    - Alerts include visitor information and description.
+    - All alerts preserved in `Alerts` table (no deletions).
+
 ---
 
-## API Endpoints (Phase 1–5)
+## API Endpoints (Phase 1–6)
 
 - **Auth (`/auth`, Phase 2)**
   - `POST /auth/login`
-  - `POST /auth/register-user` (admin only; requires `Authorization` header)
-  - `PATCH /auth/deactivate-user/{user_id}` (admin only; requires `Authorization` header)
+    - Returns JWT token in response.
+    - Token format: JWT with user_id, username, role, expiration (24 hours).
+    - Use token as `Authorization: Bearer <jwt_token>` for protected endpoints.
+  - `POST /auth/register-user` (admin only; requires JWT `Authorization` header)
+  - `PATCH /auth/deactivate-user/{user_id}` (admin only; requires JWT `Authorization` header)
     - Deactivates a user while preserving all database records (Users and AccessLogs) for audit purposes.
     - Prevents self-deactivation.
     - Logs the deactivation action to `AccessLogs`.
@@ -213,29 +245,73 @@ The server listens on `http://localhost:8000`.
 
 - **QR Codes (`/qr`, Phase 5)**
   - `POST /qr/generate-employee`
-    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
     - Body: `{ "employee_id": int }`.
+    - Validates `employee_id` format (positive integer).
     - Returns `emp_qr_id`, `code_value`, `employee_id`, `employee_name`.
     - Generates permanent QR code for employee (no expiry).
+    - Returns 422 for invalid input format, 401 for invalid/expired token.
   - `POST /qr/generate-visitor`
-    - Requires `Authorization: Bearer <user_id>:<role>`.
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
     - Body: `{ "visit_id": int, "recipient_email": "email@example.com" }`.
+    - Validates `visit_id` format and `recipient_email` using regex (RFC 5322 compliant).
     - Returns `visitor_qr_id`, `code_value`, `visit_id`, `visitor_name`, `download_url`, `expiry_date`, `email_sent`.
     - Generates temporary QR code for visitor visit (with expiry).
     - Emails QR code as downloadable link to recipient.
+    - Returns 422 for invalid input format, 401 for invalid/expired token.
   - `GET /qr/download/{visitor_qr_id}`
     - Public endpoint (no authentication required).
+    - Validates `visitor_qr_id` format (positive integer).
     - Returns PNG image file of visitor QR code.
     - Validates QR code is active and not expired.
+    - Returns 422 for invalid ID format, 404 if QR not found/expired/revoked.
+
+- **QR Scanning (`/scan`, Phase 6)**
+  - `POST /scan/employee`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Body: `{ "emp_qr_id": int, "scan_status": "signin" | "signout" }`.
+    - Validates `emp_qr_id` format and `scan_status` (must be "signin" or "signout").
+    - Inserts record into `EmployeeScanLogs`.
+    - Detects late arrivals (> 9:10 AM).
+    - Returns scan details including `is_late` flag.
+    - Sends email alert if employee is late 3+ times in 30 days.
+    - Returns 422 for invalid input format, 401 for invalid/expired token.
+  - `POST /scan/visitor`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Body: `{ "visitor_qr_id": int, "scan_status": "signin" | "signout" }`.
+    - Validates `visitor_qr_id` format and `scan_status` (must be "signin" or "signout").
+    - Inserts record into `VisitorScanLogs`.
+    - Updates `Visits.status` accordingly.
+    - Validates QR status and expiry.
+    - Creates alert if QR is invalid/expired/revoked.
+    - Returns scan details and visit status update info.
+    - Returns 422 for invalid input format, 401 for invalid/expired token.
+  - `GET /scan/alerts`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Returns all active alerts from `Alerts` table.
+    - Includes visitor information for each alert.
+    - Returns 401 for invalid/expired token.
+  - `GET /scan/employee/late-count/{employee_id}`
+    - Requires JWT `Authorization: Bearer <jwt_token>`.
+    - Validates `employee_id` format (positive integer).
+    - Returns late arrival count for employee in last 30 days.
+    - Includes salary estimate based on recent scans.
+    - Indicates if threshold (3+ late arrivals) is reached.
+    - Returns 422 for invalid ID format, 401 for invalid/expired token.
 
 ---
 
 ## Notes
 
-- **Tokens**: auth endpoints still return a simple token in the form `user_id:role`. Pass it as a Bearer header for protected endpoints.
+- **JWT Authentication**: Auth endpoints return JWT tokens. Pass it as `Authorization: Bearer <jwt_token>` header for protected endpoints. Tokens expire after 24 hours. Invalid or expired tokens return 401 Unauthorized.
 - **CNIC format**: Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
 - **Schema**: `backend/database/schema.sql` defines all tables and must remain the single source of truth for the DB structure (no in-app schema changes).
 - **User management**: Users are never deleted from the database. The `PATCH /auth/deactivate-user/{user_id}` endpoint deactivates users while preserving all records (Users and AccessLogs) for audit purposes.
 - **QR codes**: QR code images are stored in `backend/generated_qr/` directory (gitignored). Employee QR codes are permanent (no expiry), while visitor QR codes have configurable expiry (default 24 hours). Visitor QR codes are emailed as downloadable links, not embedded as base64.
 - **Email configuration**: Email functionality requires SMTP credentials in `config.ini`. If not configured, QR generation will succeed but email sending will be skipped (logged in response).
+- **QR scanning**: Employee sign-in/out status is determined from `EmployeeScanLogs` (last scan status). Visitor scans update `Visits.status` automatically. Late arrivals are detected for check-ins after 9:10 AM.
+- **Alerts**: Alerts are created in `Alerts` table for invalid/expired/revoked visitor QR codes. All alerts are preserved (no deletions). Email alerts are sent to admin when employees are late 3+ times in 30 days.
+- **Late arrival detection**: Late check-ins are detected when scan time is after 9:10 AM. Late count is maintained per employee for the last 30 days. Salary estimates are calculated using `(checkout_time - checkin_time) × hourly_rate` from `Employees` table.
+- **Input Validation**: All endpoints validate input using regex patterns. Invalid emails, IDs, or scan statuses return 422 Unprocessable Entity with clear error messages. Email validation uses RFC 5322 compliant regex. ID validation ensures positive integers within valid range.
+- **Security**: Protected endpoints require valid JWT tokens. Unauthorized access returns 401/403. All sensitive operations (QR generation, scanning, status updates) are protected by JWT authentication.
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 
 from backend.services.qr_service import (
@@ -9,17 +9,39 @@ from backend.services.qr_service import (
     get_visitor_qr_file,
 )
 from backend.utils.auth_dependency import get_current_user_id
+from backend.utils.validator import validate_email, validate_id_format
 
 router = APIRouter(prefix="/qr", tags=["qr"])
 
 
 class GenerateEmployeeQRRequest(BaseModel):
     employee_id: int
+    
+    @field_validator('employee_id')
+    @classmethod
+    def validate_employee_id(cls, v: int) -> int:
+        if not validate_id_format(v):
+            raise ValueError("employee_id must be a positive integer")
+        return v
 
 
 class GenerateVisitorQRRequest(BaseModel):
     visit_id: int
-    recipient_email: EmailStr
+    recipient_email: str
+    
+    @field_validator('visit_id')
+    @classmethod
+    def validate_visit_id(cls, v: int) -> int:
+        if not validate_id_format(v):
+            raise ValueError("visit_id must be a positive integer")
+        return v
+    
+    @field_validator('recipient_email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        if not validate_email(v):
+            raise ValueError("Invalid email format")
+        return v.strip().lower()
 
 
 @router.post("/generate-employee")
@@ -29,9 +51,17 @@ def generate_employee_qr_endpoint(
 ):
     """
     Generate a permanent QR code for an employee.
-    Requires authentication.
+    Requires JWT authentication.
     Maps to EmployeeQRCodes table.
+    Validates employee_id format before processing.
     """
+    # Additional validation (Pydantic handles basic format, but we double-check)
+    if not validate_id_format(payload.employee_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid employee_id format. Must be a positive integer."
+        )
+    
     result = generate_employee_qr(payload.employee_id, current_user_id)
     
     if not result:
@@ -56,10 +86,24 @@ def generate_visitor_qr_endpoint(
 ):
     """
     Generate a temporary QR code for a visitor visit.
-    Requires authentication.
+    Requires JWT authentication.
     Maps to VisitorQRCodes table.
     Emails the QR code as a downloadable link to the recipient.
+    Validates visit_id and recipient_email format before processing.
     """
+    # Additional validation (Pydantic handles basic format, but we double-check)
+    if not validate_id_format(payload.visit_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid visit_id format. Must be a positive integer."
+        )
+    
+    if not validate_email(payload.recipient_email):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid email format. Please provide a valid email address."
+        )
+    
     result = generate_visitor_qr(payload.visit_id, payload.recipient_email, current_user_id)
     
     if not result:
@@ -85,8 +129,15 @@ def download_visitor_qr_endpoint(visitor_qr_id: int):
     """
     Download a visitor QR code image by visitor_qr_id.
     Public endpoint (no authentication required).
-    Validates that the QR code is active and not expired.
+    Validates visitor_qr_id format and that the QR code is active and not expired.
     """
+    # Validate ID format
+    if not validate_id_format(visitor_qr_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid visitor_qr_id format. Must be a positive integer."
+        )
+    
     file_path = get_visitor_qr_file(visitor_qr_id)
     
     if not file_path:

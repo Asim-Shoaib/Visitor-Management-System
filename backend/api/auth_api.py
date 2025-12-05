@@ -30,9 +30,9 @@ def login_endpoint(payload: LoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    token = f"{user['user_id']}:{user['role']}"
+    # Token is now included in user dict (JWT)
     return {
-        "token": token,
+        "token": user["token"],
         "user_id": user["user_id"],
         "username": user["username"],
         "role": user["role"],

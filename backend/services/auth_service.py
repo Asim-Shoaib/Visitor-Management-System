@@ -4,6 +4,7 @@ from typing import Optional, Dict
 from backend.database.connection import Database
 from backend.utils.db_logger import log_action
 from backend.utils.validator import validate_username, validate_password
+from backend.utils.jwt_utils import generate_jwt_token
 
 db = Database()
 
@@ -30,10 +31,19 @@ def login(username: str, password: str) -> Optional[Dict]:
         return None
 
     log_action(user["user_id"], "login", f"User {username} logged in")
+    
+    # Generate JWT token
+    token = generate_jwt_token(
+        user["user_id"],
+        user["username"],
+        user["role_name"]
+    )
+    
     return {
         "user_id": user["user_id"],
         "username": user["username"],
         "role": user["role_name"],
+        "token": token,
     }
 
 
