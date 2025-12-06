@@ -35,7 +35,7 @@ def _send_late_alert_email(employee_name: str, employee_email: str, times_late: 
         
         # Skip email if credentials are not configured
         if sender_email == 'your_email@gmail.com' or sender_password == 'your_password':
-            print("Email not configured. Skipping late alert email.")
+            # Email not configured, skip silently
             return False
         
         msg = MIMEMultipart()
@@ -68,7 +68,7 @@ Visitor Management System
         
         return True
     except Exception as e:
-        print(f"Error sending late alert email: {e}")
+        # Log error silently (email sending failed)
         return False
 
 
@@ -502,6 +502,7 @@ def visitor_checkin(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
     Check in a visitor using their QR code.
     Updates Visits.status to 'checked_in' and sets checkin_time.
     Prevents double check-in.
+    Checks for visitor flags/alerts.
     """
     # Verify QR code first
     verification = verify_qr_code(qr_code, scanned_by_user_id)
@@ -517,6 +518,20 @@ def visitor_checkin(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
         }
     
     visit_id = verification["visit_id"]
+    visitor_id = verification.get("visitor_id")
+    
+    # Check for visitor flags
+    if visitor_id:
+        from backend.services.alert_service import check_visitor_flags
+        flags = check_visitor_flags(visitor_id)
+        if flags:
+            return {
+                "success": False,
+                "error": "Visitor has active security flags",
+                "alert": True,
+                "flags": flags,
+                "message": "SECURITY ALERT: This visitor has been flagged. Please contact security."
+            }
     
     # Check current visit status
     visit = db.fetchone("""
@@ -602,6 +617,13 @@ def visitor_checkout(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
         }
     
     visit_id = verification["visit_id"]
+    visitor_id = verification.get("visitor_id")
+    
+    # Check for visitor flags (informational, but still allow checkout)
+    flags = []
+    if visitor_id:
+        from backend.services.alert_service import check_visitor_flags
+        flags = check_visitor_flags(visitor_id)
     
     # Check current visit status
     visit = db.fetchone("""

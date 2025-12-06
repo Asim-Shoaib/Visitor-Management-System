@@ -6,6 +6,7 @@ from backend.services.auth_service import (
     register_user,
     deactivate_user,
     get_user_role,
+    get_user_info,
 )
 from backend.utils.auth_dependency import get_current_user_id
 
@@ -74,3 +75,13 @@ def deactivate_user_endpoint(
         raise HTTPException(status_code=400, detail="Unable to deactivate user (user not found or self-deactivation attempted)")
 
     return {"message": f"User {user_id} deactivated successfully. All records preserved for audit."}
+
+
+@router.get("/me")
+def get_current_user_endpoint(current_user_id: int = Depends(get_current_user_id)):
+    """Get current authenticated user information."""
+    user_info = get_user_info(current_user_id)
+    if not user_info:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return user_info

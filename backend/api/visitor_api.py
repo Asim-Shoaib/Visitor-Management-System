@@ -17,7 +17,8 @@ class AddVisitorRequest(BaseModel):
 
 
 @router.post("/add-visitor")
-def add_visitor_endpoint(payload: AddVisitorRequest):
+def add_visitor_endpoint(payload: AddVisitorRequest, current_user_id: int = Depends(get_current_user_id)):
+    """Add a new visitor. Requires JWT authentication."""
     visitor_id = add_visitor(
         full_name=payload.full_name,
         cnic=payload.cnic,
@@ -32,7 +33,8 @@ def add_visitor_endpoint(payload: AddVisitorRequest):
 
 
 @router.get("/search-visitor")
-def search_visitor_endpoint(cnic: Optional[str] = None, visitor_id: Optional[int] = None):
+def search_visitor_endpoint(cnic: Optional[str] = None, visitor_id: Optional[int] = None, current_user_id: int = Depends(get_current_user_id)):
+    """Search for a visitor. Requires JWT authentication."""
     if not cnic and not visitor_id:
         raise HTTPException(status_code=400, detail="Provide cnic or visitor_id.")
 

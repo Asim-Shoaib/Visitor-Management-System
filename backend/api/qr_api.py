@@ -109,7 +109,7 @@ def generate_visitor_qr_endpoint(
         result = generate_visitor_qr(payload.visit_id, payload.recipient_email, current_user_id)
     except Exception as e:
         # Log the exception for debugging
-        print(f"Error generating visitor QR: {e}")
+        # Error generating visitor QR
         raise HTTPException(
             status_code=500,
             detail=f"Internal error generating visitor QR code: {str(e)}"

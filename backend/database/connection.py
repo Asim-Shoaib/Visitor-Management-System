@@ -2,6 +2,9 @@ import mysql.connector
 from mysql.connector import Error
 import configparser
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
@@ -26,61 +29,71 @@ class Database:
                 port=self.port,
                 user=self.user,
                 password=self.password,
-                database=self.database
+                database=self.database,
+                autocommit=False,
+                use_pure=True,
+                auth_plugin='mysql_native_password',
+                ssl_verify_cert=False,
+                ssl_verify_identity=False
             )
             if self.conn.is_connected():
-                print("Connected to MySQL successfully.")
                 self.cursor = self.conn.cursor(dictionary=True)
+                logger.info(f"Database connected successfully to {self.database} @ {self.host}:{self.port}")
         except Error as e:
-            print(f"Error connecting to MySQL: {e}")
+            logger.error(f"Database connection failed: {str(e)}")
             self.conn = None
             self.cursor = None
     
+    def _ensure_connection(self):
+        """Ensure connection is alive, reconnect if needed."""
+        try:
+            if self.conn is None or not self.conn.is_connected():
+                self.connect()
+        except Error:
+            self.connect()
+    
     def execute(self, sql, params=None):
         """Returns True if executed correctly, False otherwise. Used for INSERT, UPDATE, DELETE."""
-        if not self.conn or not self.conn.is_connected():
-            self.connect()
-            if not self.conn:
-                print("No database connection")
-                return False
-        
         try:
+            self._ensure_connection()
+            if not self.conn:
+                return False
+            
             self.cursor.execute(sql, params or ())
             self.conn.commit()
             return True
         except Error as e:
-            print(f"Error executing query: {e}")
-            self.conn.rollback()
+            logger.error(f"Execute error: {str(e)}")
+            try:
+                self.conn.rollback()
+            except:
+                pass
             return False
     
     def fetchall(self, sql, params=None):
         """Returns list of dicts. Used for SELECT queries."""
-        if not self.conn or not self.conn.is_connected():
-            self.connect()
-            if not self.conn:
-                print("No database connection")
-                return []
-        
         try:
+            self._ensure_connection()
+            if not self.conn:
+                return []
+            
             self.cursor.execute(sql, params or ())
             return self.cursor.fetchall()
         except Error as e:
-            print(f"Error fetching data: {e}")
+            logger.error(f"Fetchall error: {str(e)}")
             return []
     
     def fetchone(self, sql, params=None):
         """Returns one query result as dict. Used for SELECT queries."""
-        if not self.conn or not self.conn.is_connected():
-            self.connect()
-            if not self.conn:
-                print("No database connection")
-                return None
-        
         try:
+            self._ensure_connection()
+            if not self.conn:
+                return None
+            
             self.cursor.execute(sql, params or ())
             return self.cursor.fetchone()
         except Error as e:
-            print(f"Error fetching data: {e}")
+            logger.error(f"Fetchone error: {str(e)}")
             return None
     
     def close(self):
@@ -89,5 +102,4 @@ class Database:
             self.cursor.close()
         if self.conn and self.conn.is_connected():
             self.conn.close()
-            print("MySQL connection closed.")
 

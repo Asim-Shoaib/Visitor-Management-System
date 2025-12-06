@@ -185,6 +185,7 @@ def verify_qr_endpoint(
     Verify a QR code and determine if it belongs to an employee or visitor.
     Requires JWT authentication.
     Validates QR code status (valid, expired, revoked, invalid).
+    Checks for visitor flags if visitor QR code.
     Returns type, status, and linked information.
     """
     result = verify_qr_code(payload.qr_code, current_user_id)
@@ -194,6 +195,17 @@ def verify_qr_endpoint(
             status_code=400,
             detail="Unable to verify QR code"
         )
+    
+    # Check for visitor flags if it's a valid visitor QR
+    if result.get("type") == "visitor" and result.get("status") == "valid":
+        visitor_id = result.get("visitor_id")
+        if visitor_id:
+            from backend.services.alert_service import check_visitor_flags
+            flags = check_visitor_flags(visitor_id)
+            if flags:
+                result["alert"] = True
+                result["flags"] = flags
+                result["message"] = "SECURITY ALERT: This visitor has active security flags"
     
     return result
 
