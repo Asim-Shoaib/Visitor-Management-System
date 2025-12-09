@@ -46,7 +46,7 @@ def _generate_qr_code_image(data: str, filepath: str) -> bool:
         img.save(filepath)
         return True
     except Exception as e:
-        print(f"Error generating QR code: {e}")
+        # Error generating QR code - return None
         return False
 
 
@@ -61,7 +61,7 @@ def _send_email_with_qr_link(recipient_email: str, visitor_name: str, download_u
         
         # Skip email if credentials are not configured
         if sender_email == 'your_email@gmail.com' or sender_password == 'your_password':
-            print("Email not configured. Skipping email send.")
+            # Email not configured, skip silently
             return False
         
         msg = MIMEMultipart()
@@ -96,7 +96,7 @@ Visitor Management System
         
         return True
     except Exception as e:
-        print(f"Error sending email: {e}")
+        # Error sending email - return False
         return False
 
 

@@ -74,3 +74,4 @@ def get_user_from_token(token: str) -> Optional[Dict]:
         "role": payload.get("role"),
     }
 
+

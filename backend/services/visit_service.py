@@ -1,5 +1,5 @@
+from typing import Optional, Dict, List
 from datetime import datetime
-from typing import List, Dict, Optional
 
 from backend.database.connection import Database
 from backend.utils.db_logger import log_action
@@ -7,191 +7,150 @@ from backend.utils.db_logger import log_action
 db = Database()
 
 
-def _validate_visit_status_transition(current_status: str, new_status: str) -> bool:
-    """
-    Enforce allowed status transitions for Visits.
-
-    Allowed:
-    - pending -> checked_in
-    - pending -> denied
-    - checked_in -> checked_out
-
-    No other transitions are currently allowed.
-    """
-    allowed = {
-        "pending": {"checked_in", "denied"},
-        "checked_in": {"checked_out"},
-        "checked_out": set(),
-        "denied": set(),
-    }
-    return new_status in allowed.get(current_status, set())
-
-
 def create_visit(
-    *,
     visitor_id: int,
     site_id: int,
-    purpose_details: Optional[str],
-    host_employee_id: Optional[int],
-    requested_by_user_id: int,
+    purpose_details: Optional[str] = None,
+    host_employee_id: Optional[int] = None,
+    requested_by_user_id: int = None
 ) -> Optional[int]:
     """
-    Create a new visit record in Visits table.
-
-    - visitor_id and site_id must exist (FK integrity).
-    - host_employee_id is optional but, if provided, must exist.
-    - Initial status is 'pending'.
-    - Enforces constraint: Visitors cannot have multiple active visits simultaneously.
+    Create a new visit record.
+    Returns visit_id on success, None on failure.
     """
-    # Check visitor exists
-    visitor = db.fetchone(
-        "SELECT visitor_id FROM Visitors WHERE visitor_id = %s", (visitor_id,)
-    )
+    # Validate visitor exists
+    visitor = db.fetchone("SELECT visitor_id FROM visitors WHERE visitor_id = %s", (visitor_id,))
     if not visitor:
         return None
     
-    # Enforce constraint: Check for existing active visits (pending or checked_in)
-    active_visit = db.fetchone("""
-        SELECT visit_id, status 
-        FROM Visits 
-        WHERE visitor_id = %s 
-          AND status IN ('pending', 'checked_in')
-        ORDER BY issue_date DESC
-        LIMIT 1
-    """, (visitor_id,))
-    
-    if active_visit:
-        # Log the attempt to create duplicate active visit
-        log_action(
-            requested_by_user_id,
-            "create_visit_blocked",
-            f"Blocked creation of duplicate active visit for visitor_id={visitor_id}. Existing active visit_id={active_visit['visit_id']} with status={active_visit['status']}"
-        )
-        return None  # Return None to indicate failure (caller should handle this)
-
-    # Check site exists
-    site = db.fetchone("SELECT site_id FROM Sites WHERE site_id = %s", (site_id,))
+    # Validate site exists
+    site = db.fetchone("SELECT site_id FROM sites WHERE site_id = %s", (site_id,))
     if not site:
         return None
-
-    # Check host employee if provided
-    if host_employee_id is not None:
-        host = db.fetchone(
-            "SELECT employee_id FROM Employees WHERE employee_id = %s",
-            (host_employee_id,),
-        )
-        if not host:
+    
+    # Validate host employee if provided
+    if host_employee_id:
+        employee = db.fetchone("SELECT employee_id FROM employees WHERE employee_id = %s", (host_employee_id,))
+        if not employee:
             return None
-
+    
+    # Check if visitor already has an active visit (pending or checked_in)
+    active_visit = db.fetchone("""
+        SELECT visit_id FROM visits 
+        WHERE visitor_id = %s AND status IN ('pending', 'checked_in')
+    """, (visitor_id,))
+    if active_visit:
+        return None
+    
+    # Insert visit
     insert_sql = """
-        INSERT INTO Visits (visitor_id, site_id, host_employee_id, purpose_details, status)
+        INSERT INTO visits (visitor_id, site_id, host_employee_id, purpose_details, status)
         VALUES (%s, %s, %s, %s, 'pending')
     """
-    ok = db.execute(
-        insert_sql,
-        (visitor_id, site_id, host_employee_id, purpose_details),
-    )
-    if not ok:
-        return None
-
-    row = db.fetchone(
-        """
-        SELECT visit_id
-        FROM Visits
-        WHERE visitor_id = %s
-        ORDER BY visit_id DESC
-        LIMIT 1
-        """,
-        (visitor_id,),
-    )
-    visit_id = row["visit_id"] if row else None
-
-    if visit_id is not None:
-        log_action(
-            requested_by_user_id,
-            "create_visit",
-            f"Created visit {visit_id} for visitor {visitor_id} at site {site_id}",
-        )
-
-    return visit_id
+    success = db.execute(insert_sql, (visitor_id, site_id, host_employee_id, purpose_details))
+    
+    if success:
+        visit = db.fetchone("SELECT visit_id FROM visits WHERE visitor_id = %s AND site_id = %s ORDER BY visit_id DESC LIMIT 1", (visitor_id, site_id))
+        if visit:
+            visit_id = visit['visit_id']
+            if requested_by_user_id:
+                log_action(requested_by_user_id, "create_visit", f"Created visit {visit_id} for visitor {visitor_id} at site {site_id}")
+            return visit_id
+    
+    return None
 
 
 def update_visit_status(
-    *,
     visit_id: int,
     new_status: str,
-    requested_by_user_id: int,
+    requested_by_user_id: int = None
 ) -> bool:
     """
-    Update a visit's status and maintain timestamps:
-
-    - pending -> checked_in : sets checkin_time (if not already set)
-    - checked_in -> checked_out : sets checkout_time (if not already set)
-    - pending -> denied : leaves timestamps null
+    Update visit status with proper transition validation.
+    Allowed transitions:
+    - pending -> checked_in (sets checkin_time)
+    - pending -> denied (no timestamps)
+    - checked_in -> checked_out (sets checkout_time)
+    
+    Returns True on success, False on failure.
     """
-    if new_status not in ("pending", "checked_in", "checked_out", "denied"):
+    valid_statuses = ('pending', 'checked_in', 'checked_out', 'denied')
+    if new_status not in valid_statuses:
         return False
-
-    visit = db.fetchone(
-        "SELECT status, checkin_time, checkout_time FROM Visits WHERE visit_id = %s",
-        (visit_id,),
-    )
+    
+    # Get current visit status
+    visit = db.fetchone("SELECT status, checkin_time, checkout_time FROM visits WHERE visit_id = %s", (visit_id,))
     if not visit:
         return False
-
-    current_status = visit["status"]
-    if not _validate_visit_status_transition(current_status, new_status):
+    
+    current_status = visit['status']
+    
+    # Validate status transitions
+    valid_transitions = {
+        'pending': ('checked_in', 'denied'),
+        'checked_in': ('checked_out',),
+        'checked_out': (),  # Terminal state
+        'denied': ()  # Terminal state
+    }
+    
+    if new_status not in valid_transitions.get(current_status, ()):
         return False
-
+    
+    # Update status and timestamps
     now = datetime.now()
-    checkin_time = visit["checkin_time"]
-    checkout_time = visit["checkout_time"]
-
-    if current_status == "pending" and new_status == "checked_in":
-        checkin_time = checkin_time or now
-    elif current_status == "checked_in" and new_status == "checked_out":
-        checkout_time = checkout_time or now
-
-    update_sql = """
-        UPDATE Visits
-        SET status = %s,
-            checkin_time = %s,
-            checkout_time = %s
-        WHERE visit_id = %s
-    """
-    ok = db.execute(update_sql, (new_status, checkin_time, checkout_time, visit_id))
-    if ok:
-        log_action(
-            requested_by_user_id,
-            "update_visit_status",
-            f"Updated visit {visit_id} status from {current_status} to {new_status}",
-        )
-    return ok
+    if new_status == 'checked_in':
+        update_sql = """
+            UPDATE visits 
+            SET status = %s, checkin_time = %s 
+            WHERE visit_id = %s
+        """
+        success = db.execute(update_sql, (new_status, now, visit_id))
+    elif new_status == 'checked_out':
+        update_sql = """
+            UPDATE visits 
+            SET status = %s, checkout_time = %s 
+            WHERE visit_id = %s
+        """
+        success = db.execute(update_sql, (new_status, now, visit_id))
+    else:
+        update_sql = """
+            UPDATE visits 
+            SET status = %s 
+            WHERE visit_id = %s
+        """
+        success = db.execute(update_sql, (new_status, visit_id))
+    
+    if success and requested_by_user_id:
+        log_action(requested_by_user_id, "update_visit_status", f"Updated visit {visit_id} from {current_status} to {new_status}")
+    
+    return success
 
 
 def get_active_visits() -> List[Dict]:
     """
-    Return all visits that are currently active (pending or checked_in),
-    along with basic visitor and site information.
+    Get all active visits (pending or checked_in status).
+    Returns list of visits with visitor and site information.
     """
-    sql = """
-        SELECT
+    visits = db.fetchall("""
+        SELECT 
             v.visit_id,
+            v.visitor_id,
+            vis.full_name as visitor_name,
+            v.site_id,
+            s.site_name,
+            v.host_employee_id,
+            e.name as host_employee_name,
+            v.purpose_details,
             v.status,
             v.checkin_time,
             v.checkout_time,
-            v.issue_date,
-            vs.full_name AS visitor_name,
-            vs.cnic AS visitor_cnic,
-            s.site_name,
-            s.address,
-            v.host_employee_id
-        FROM Visits v
-        JOIN Visitors vs ON v.visitor_id = vs.visitor_id
-        JOIN Sites s ON v.site_id = s.site_id
+            v.issue_date
+        FROM visits v
+        JOIN visitors vis ON v.visitor_id = vis.visitor_id
+        JOIN sites s ON v.site_id = s.site_id
+        LEFT JOIN employees e ON v.host_employee_id = e.employee_id
         WHERE v.status IN ('pending', 'checked_in')
-        ORDER BY v.issue_date DESC, v.visit_id DESC
-    """
-    return db.fetchall(sql)
-
-
+        ORDER BY v.issue_date DESC
+    """)
+    
+    return visits if visits is not None else []

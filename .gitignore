@@ -1,72 +1,145 @@
-# Environment and secrets
-.env
-.env.*
-!.env.example
-backend/config/*.local.ini  # if you ever create local config versions
-*.pem
-*.key
-
-# Python artifacts and cache
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.Python
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
 .pytest_cache/
-.coverage
-htmlcov/
-coverage.xml
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
 
 # Virtual environments
 venv/
 env/
 ENV/
 .virtualenv/
-*.egg-info/
-.eggs/
-dist/
-build/
+.venv/
 
-# Logs and runtime generated files
+# Node/React
+node_modules/
+frontend/node_modules/
+.npm
+.node_repl_history
+.yarn-integrity
+.yarn/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Frontend build
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.next/
+frontend/out/
+.vite/
+.cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Backend configuration (sensitive)
+backend/config/config.ini
+backend/config/*.local.ini
+
+# Generated QR codes
+backend/generated_qr/
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Logs
 *.log
 logs/
 backend/logs/
 debug.log*
 operations.log*
 
-# Local databases and backups
+# Database files
 *.db
+*.sqlite
 *.sqlite3
 *.sql
-*.sql dump
 *.bak
 *.backup
 
-# Generated QR or barcode files
-backend/generated_qr/
-frontend/generated_qr/
-frontend/public/qrcodes/
-*.png  # remove this if you plan to commit non-QR images, but QR images should be ignored
+# Excel exports
+*.xlsx
+*.xls
+*.csv
 
-# Node/React 
-node_modules/
-.next/
-out/
-build/
-npm-debug.log*
-yarn-error.log*
-yarn-debug.log*
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
 
-# IDE and editor settings
+# IDE
 .vscode/
 .idea/
 .history/
 *.sublime-project
 *.sublime-workspace
 *.code-workspace
+*.swp
+*.swo
+*~
 
-# OS generated junk
-.DS_Store
-Thumbs.db
+# Temporary files
+*.tmp
+*.temp
+*.cache
+.cache/
+tmp/
+temp/
 
-# Ignore config files with sensitive info
-backend/config/config.ini
+# Test files
+test_*.py
+*_test.py
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# Jupyter
+.ipynb_checkpoints
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Python version
+.python-version
+
+docs/
+
+# DO NOT IGNORE (keep these in git)
+!/backend/src
+!/frontend/src
+!README.md
+!backend/database/schema.sql
+!setup_database.sql
+!requirements.txt
+!frontend/package.json

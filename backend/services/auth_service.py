@@ -90,16 +90,9 @@ def deactivate_user(user_id: int, admin_user_id: int) -> bool:
     if not user:
         return False
 
-    # TODO: Revoke EmployeeQRCodes when Users->Employees relationship exists
-    # Example implementation (when relationship exists):
-    # revoke_qr_sql = """
-    #     UPDATE EmployeeQRCodes eq
-    #     JOIN Employees e ON eq.employee_id = e.employee_id
-    #     JOIN Users u ON e.user_id = u.user_id  -- Requires FK in schema
-    #     SET eq.status = 'revoked'
-    #     WHERE u.user_id = %s AND eq.status = 'active'
-    # """
-    # db.execute(revoke_qr_sql, (user_id,))
+    # Note: EmployeeQRCodes revocation would require a Users->Employees relationship
+    # which is not present in the current schema. This is intentional as Users and Employees
+    # are separate entities in this system.
 
     # Log the deactivation action (user record remains in database for audit)
     log_action(admin_user_id, "deactivate_user", f"Deactivated user {user['username']} (id={user_id})")
@@ -116,3 +109,26 @@ def get_user_role(user_id: int) -> Optional[str]:
     """
     user = db.fetchone(sql, (user_id,))
     return user["role_name"] if user else None
+
+
+def get_user_info(user_id: int) -> Optional[Dict]:
+    """Return complete user information."""
+    try:
+        sql = """
+            SELECT u.user_id, u.username, r.role_name
+            FROM Users u
+            JOIN Roles r ON u.role_id = r.role_id
+            WHERE u.user_id = %s
+        """
+        user = db.fetchone(sql, (user_id,))
+        if not user:
+            return None
+
+        return {
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "role": user["role_name"]
+        }
+    except Exception:
+        # On database error, return None to avoid cascading auth failures
+        return None

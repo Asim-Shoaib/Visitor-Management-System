@@ -1,81 +1,227 @@
-## Visitor Management System – backend
+# Visitor Management System
 
-Phase 7:
+**Version:** 1.0.0  
+**Status:** Production Ready
 
-Current scope:
+A comprehensive visitor and employee management system with QR code-based access control, attendance tracking, salary calculation, and comprehensive audit logging.
 
-- Database schema and connection
-- Basic authentication (users / roles) with JWT
-- Visitor registration and lookup
-- Visit management (create/update/active list)
-- QR code generation (employee & visitor) with email delivery
-- QR scanning, status updates, late arrival detection, and alerts
-- Visitor check-in/check-out workflows with QR verification
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [API Overview](#api-overview)
+- [Frontend Pages](#frontend-pages)
+- [Documentation](#documentation)
+- [License](#license)
+
+---
+
+## Features
+
+### Core Functionality
+
+✅ **Authentication & Authorization**
+- JWT-based user authentication (24-hour token expiration)
+- Role-based access control (Admin, Security)
+- Secure password hashing (SHA256)
+
+✅ **Visitor Management**
+- Visitor registration with CNIC validation (format: XXXXX-XXXXXXX-X)
+- Visitor search by CNIC or visitor ID
+- Visitor check-in/check-out workflows
+- Visit creation and status tracking
+
+✅ **Employee Management**
+- Employee creation (admin only)
+- Department assignment
+- Hourly rate tracking
+- Employee QR code generation (permanent)
+
+✅ **QR Code System**
+- Employee QR codes (permanent, no expiry)
+- Visitor QR codes (temporary, 24-hour expiry)
+- QR code email delivery
+- QR code download endpoint
+- QR code verification
+
+✅ **Attendance Tracking**
+- Employee sign-in/sign-out via QR scanning
+- Late arrival detection (threshold: 9:10 AM)
+- Late arrival alerts (3+ times in 30 days)
+- Real-time attendance status
+
+✅ **Salary Calculation**
+- Calculate salary based on attendance logs
+- Date range filtering
+- Daily breakdown display
+- Excel export functionality
+- Formula: `salary = total_hours × hourly_rate`
+
+✅ **Audit & Logging**
+- Comprehensive access logs for all operations
+- Filterable by date range and action type
+- Excel export for logs
+- User action tracking
+
+✅ **Alert System**
+- Security alerts for invalid/expired QR codes
+- Visitor flagging capability
+- Alert management interface
+
+---
+
+## Tech Stack
+
+### Backend
+- **Framework:** FastAPI 0.104.1
+- **Language:** Python 3.8+
+- **Database:** MySQL 8.0+
+- **Authentication:** JWT (PyJWT 2.8.0)
+- **QR Code Generation:** qrcode[pil] 7.4.2
+- **Excel Export:** openpyxl 3.1.2
+- **Server:** Uvicorn 0.24.0
+
+### Frontend
+- **Framework:** React 18.2.0
+- **Build Tool:** Vite 5.0.8
+- **Routing:** React Router 6.20.0
+- **HTTP Client:** Axios 1.6.2
+- **Notifications:** React Toastify 9.1.3
+- **QR Display:** qrcode.react 3.1.0
+- **QR Scanner:** html5-qrcode 2.3.8
+
+### Database
+- **RDBMS:** MySQL 8.0+
+- **Tables:** 13 core tables (Users, Roles, Visitors, Visits, Employees, Sites, Departments, QR Codes, Scan Logs, AccessLogs, Alerts)
 
 ---
 
 ## Project Structure
 
 ```
-visitor_management_system/
+Visitor-Management-System/
 ├── backend/
-│   ├── __init__.py
-│   ├── config/
-│   │   └── config.ini
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── auth_api.py
-│   │   ├── visitor_api.py
-│   │   ├── visit_api.py
-│   │   ├── qr_api.py
-│   │   └── scan_api.py
-│   ├── database/
-│   │   ├── __init__.py
-│   │   ├── connection.py
-│   │   └── schema.sql
-│   ├── main.py
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── auth_service.py
-│   │   ├── visitor_service.py
-│   │   ├── visit_service.py
-│   │   ├── qr_service.py
-│   │   └── scan_service.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── auth_dependency.py
-│       ├── db_logger.py
-│       └── validator.py
-├── requirements.txt
-├── setup_database.sql
-├── README.md
-└── backend/generated_qr/  (generated QR code images, gitignored)
+│   ├── api/                    # FastAPI route handlers
+│   │   ├── auth_api.py         # Authentication endpoints
+│   │   ├── visitor_api.py      # Visitor management
+│   │   ├── visit_api.py        # Visit management
+│   │   ├── qr_api.py           # QR code generation
+│   │   ├── scan_api.py         # QR scanning
+│   │   ├── site_api.py         # Sites, employees, salary
+│   │   ├── logs_api.py         # Access logs
+│   │   ├── attendance_api.py   # Attendance scanning
+│   │   ├── user_management_api.py  # User management
+│   │   ├── alert_api.py        # Alert management
+│   │   ├── email_api.py        # Email functionality
+│   │   └── reports_api.py      # Report exports
+│   ├── services/               # Business logic
+│   │   ├── auth_service.py     # Authentication logic
+│   │   ├── visitor_service.py  # Visitor operations
+│   │   ├── visit_service.py    # Visit operations
+│   │   ├── qr_service.py       # QR code generation
+│   │   ├── scan_service.py     # Scanning logic
+│   │   ├── site_service.py     # Site/employee/salary
+│   │   ├── logs_service.py     # Logging operations
+│   │   ├── alert_service.py    # Alert management
+│   │   └── email_service.py    # Email sending
+│   ├── utils/                  # Utilities
+│   │   ├── auth_dependency.py  # JWT authentication
+│   │   ├── jwt_utils.py        # JWT token handling
+│   │   ├── validator.py        # Input validation
+│   │   └── db_logger.py        # Audit logging
+│   ├── database/               # Database files
+│   │   ├── connection.py       # Database connection
+│   │   └── schema.sql          # Database schema
+│   ├── config/                 # Configuration
+│   │   └── config.ini          # App configuration
+│   ├── generated_qr/           # QR code images (gitignored)
+│   └── main.py                 # FastAPI application entry
+├── frontend/
+│   ├── src/
+│   │   ├── pages/              # Page components
+│   │   │   ├── Login.jsx
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── EmployeeQR.jsx
+│   │   │   ├── VisitorEntry.jsx
+│   │   │   ├── CheckInOut.jsx
+│   │   │   ├── EmployeeAttendance.jsx
+│   │   │   ├── VisitLogs.jsx
+│   │   │   ├── UserManagement.jsx
+│   │   │   ├── EmployeeManagement.jsx
+│   │   │   ├── SiteManagement.jsx
+│   │   │   ├── SalaryCalculation.jsx
+│   │   │   └── AdminProfile.jsx
+│   │   ├── components/         # Reusable components
+│   │   │   ├── Layout.jsx
+│   │   │   └── Layout.css
+│   │   ├── contexts/           # React contexts
+│   │   │   ├── AuthContext.jsx # Authentication state
+│   │   │   └── DataContext.jsx # Data caching
+│   │   ├── services/           # API service
+│   │   │   └── api.js          # Axios configuration
+│   │   ├── App.jsx             # Main app component
+│   │   ├── main.jsx            # Entry point
+│   │   └── index.css           # Global styles
+│   ├── package.json
+│   └── vite.config.js
+├── docs/                       # Documentation
+│   ├── SDS_01_Introduction.md
+│   ├── SDS_02_System_Overview.md
+│   ├── SDS_03_Architectural_Design.md
+│   ├── SDS_04_Detailed_Design.md
+│   ├── SDS_05_User_Interface_Design.md
+│   ├── SDS_06_External_Interface_Design.md
+│   ├── SDS_07_Non_Functional_Requirements.md
+│   ├── SDS_08_Design_Constraints.md
+│   ├── SDS_09_Assumptions_Dependencies.md
+│   ├── SDS_10_Appendices.md
+│   ├── API_REFERENCE.md        # Complete API documentation
+│   ├── DATA_DICTIONARY.md      # Database schema
+│   ├── SETUP_GUIDE.md          # Installation guide
+│   ├── SYSTEM_OVERVIEW.md      # Architecture overview
+│   ├── DEPLOYMENT.md           # Deployment guide
+│   └── README.md               # Documentation index
+├── requirements.txt            # Python dependencies
+├── setup_database.sql          # Seed data
+└── README.md                   # This file
 ```
 
 ---
 
-## Getting Started
+## Installation
 
-### 1. Create the Database & Tables
+### Prerequisites
 
+- Python 3.8+
+- Node.js 18+
+- MySQL 8.0+
+- Git (optional)
+
+### Backend Setup
+
+1. **Install Python dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Create database:**
 ```bash
 mysql -u root -p < backend/database/schema.sql
 ```
 
-This script creates the `Visitor_Management_System` database and all required tables.
-
-### 2. (Optional) Insert Seed Data
-
+3. **Initialize database (optional):**
 ```bash
 mysql -u root -p < setup_database.sql
 ```
 
-This inserts the mandatory roles plus a sample admin user (`admin` / `admin123`) and placeholder records for departments, sites, and employees.
-
-### 3. Configure Database Credentials, Email, and JWT
-
-Edit `backend/config/config.ini` and set your MySQL connection parameters, email settings, and JWT secret:
-
+4. **Configure backend:**
+Edit `backend/config/config.ini`:
 ```ini
 [database]
 host = localhost
@@ -88,285 +234,349 @@ database = Visitor_Management_System
 smtp_server = smtp.gmail.com
 smtp_port = 587
 sender_email = your_email@gmail.com
-sender_password = your_password
+sender_password = your_app_password
+admin_email = admin@example.com
 
 [app]
-secret_key = your-strong-secret-key-here-change-in-production
+secret_key = your-secret-key-change-in-production
 qr_code_expiry_hours = 24
 base_url = http://localhost:8000
 ```
 
-**Note**: 
-- For Gmail, you may need to use an "App Password" instead of your regular password. Email functionality will be skipped if credentials are not configured.
-- **JWT Secret Key**: Change `secret_key` to a strong, random string in production. This is used to sign and verify JWT tokens.
+### Frontend Setup
 
-### 4. Install Dependencies
-
+1. **Install Node dependencies:**
 ```bash
-pip install -r requirements.txt
+cd frontend
+npm install
 ```
 
-`requirements.txt` currently includes:
-- `mysql-connector-python`
-- `fastapi`
-- `uvicorn`
-- `pydantic`
-- `qrcode[pil]` (QR code generation)
-- `email-validator` (email validation)
-- `PyJWT` (JWT token generation and validation)
-- `python-jose[cryptography]` (JWT cryptography support)
-
-### 5. Test the Database Connection
-
-Use the `Database` class in `backend/database/connection.py` to open a connection and run queries:
-
-```python
-from backend.database.connection import Database
-
-db = Database()
-result = db.fetchone("SELECT COUNT(*) AS users FROM Users")
-print(result)
+2. **Configure frontend (optional):**
+Create `frontend/.env`:
+```
+VITE_API_URL=http://localhost:8000
 ```
 
 ---
 
-## Running the API
+## Configuration
 
-1. Ensure the database is online and seeded (steps above).
-2. Start the FastAPI application:
+### Environment Variables
 
+**Backend:**
+- Configuration via `backend/config/config.ini`
+- Database credentials
+- Email SMTP settings
+- JWT secret key
+- Base URL
+
+**Frontend:**
+- `VITE_API_URL` - Backend API URL (defaults to `http://localhost:8000`)
+
+### Default Credentials
+
+- **Username:** `admin`
+- **Password:** `admin123`
+
+⚠️ **Important:** Change default password immediately in production!
+
+---
+
+## Running the Application
+
+### Development Mode
+
+**Terminal 1 - Backend:**
 ```bash
-uvicorn backend.main:app --reload
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The server listens on `http://localhost:8000`.
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm run dev
+```
+
+- Backend API: `http://localhost:8000`
+- Frontend: `http://localhost:3000` (or port shown)
+- API Docs: `http://localhost:8000/docs`
+
+### Production Mode
+
+1. **Build frontend:**
+```bash
+cd frontend
+npm run build
+```
+
+2. **Copy build to backend:**
+```bash
+# Windows
+xcopy /E /I frontend\dist backend\static
+
+# Linux/Mac
+cp -r frontend/dist/* backend/static/
+```
+
+3. **Run backend:**
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+- Application: `http://localhost:8000`
+- API Docs: `http://localhost:8000/docs`
 
 ---
 
-## Implemented Features (Phase 1–7)
+## API Overview
 
-- **Database foundation (Phase 1)**
-  - MySQL schema in `backend/database/schema.sql` (must not be modified).
-  - Connection helper in `backend/database/connection.py`.
-  - CNIC / username / password / name / contact validators in `backend/utils/validator.py`.
-  - Access logging helper in `backend/utils/db_logger.py` (writes to `AccessLogs`).
+### Base URL
+```
+http://localhost:8000
+```
 
-- **Authentication system (Phase 2)**
-  - Users & roles backed by `Users` and `Roles` tables.
-  - Simple token format returned on login: `user_id:role`.
-  - `Authorization: Bearer <user_id>:<role>` header is parsed by `backend/utils/auth_dependency.py`.
-  - Auth actions logged into `AccessLogs` via `log_action`.
-  - User deactivation (not deletion) preserves all records for audit purposes.
+### Authentication
+All protected endpoints require JWT token:
+```
+Authorization: Bearer <jwt_token>
+```
 
-- **Visitor CRUD (Phase 3)**
-  - Visitor registration and lookup mapped to `Visitors` table.
-  - CNIC format enforced in code (`validator.validate_cnic`) and by DB `CHECK` constraint.
-  - Duplicate `cnic` prevented via DB `UNIQUE` and pre-insert check.
+### Endpoint Categories
 
-- **Visit management (Phase 4)**
-  - Visit creation mapped to `Visits`:
-    - Validates `visitor_id` ∈ `Visitors`, `site_id` ∈ `Sites`.
-    - `host_employee_id` is optional but, if provided, must exist in `Employees`.
-    - New visits start with status `pending`.
-  - Visit status updates enforce allowed transitions:
-    - `pending → checked_in` (sets `checkin_time`).
-    - `pending → denied` (no timestamps).
-    - `checked_in → checked_out` (sets `checkout_time`).
-  - Active visits query:
-    - Returns `pending` and `checked_in` visits with joined visitor and site data.
-  - All visit actions are logged to `AccessLogs` with the requesting `user_id`.
+**Authentication** (`/auth`)
+- `POST /auth/login` - Login
+- `POST /auth/register-user` - Register user (admin)
+- `PATCH /auth/deactivate-user/{id}` - Deactivate user (admin)
 
-- **QR Code Management (Phase 5)**
-  - Employee QR generation (permanent):
-    - Maps to `EmployeeQRCodes` table.
-    - QR codes stored as PNG files in `backend/generated_qr/`.
-    - No expiry date (permanent QR codes).
-    - Status defaults to `active`.
-  - Visitor QR generation (temporary):
-    - Maps to `VisitorQRCodes` table.
-    - Linked to a valid `visit_id` from `Visits`.
-    - Expiry date set based on `qr_code_expiry_hours` config (default 24 hours).
-    - QR codes emailed as downloadable links (not base64/inline).
-    - Status defaults to `active`.
-  - QR code download:
-    - Public endpoint to download visitor QR code images.
-    - Validates QR code is active and not expired.
-  - All QR generation actions logged to `AccessLogs`.
+**Visitors** (`/visitor`)
+- `POST /visitor/add-visitor` - Register visitor
+- `GET /visitor/search-visitor` - Search visitor
+- `POST /visitor/checkin` - Check in visitor
+- `POST /visitor/checkout` - Check out visitor
 
-- **QR Scanning & Status Updates (Phase 6)**
-  - Employee QR scanning:
-    - Inserts scan records into `EmployeeScanLogs` (signin/signout).
-    - Determines current sign-in status from last scan in `EmployeeScanLogs`.
-    - Detects late check-ins (after 9:10 AM).
-    - Maintains late count per employee (last 30 days).
-    - Sends email alert to admin when employee is late 3+ times in 30 days.
-    - Includes salary estimate calculation: `(checkout_time - checkin_time) × hourly_rate`.
-    - All scans logged to `AccessLogs`.
-  - Visitor QR scanning:
-    - Inserts scan records into `VisitorScanLogs` (signin/signout).
-    - Updates `Visits.status` accordingly:
-      - `pending → checked_in` on signin scan.
-      - `checked_in → checked_out` on signout scan.
-    - Validates QR code status and expiry date.
-    - Creates alert in `Alerts` table if QR is invalid, expired, or revoked.
-    - All scans logged to `AccessLogs`.
-  - Alert system:
-    - Alerts generated for invalid/expired/revoked visitor QR codes.
-    - Alerts include visitor information and description.
-    - All alerts preserved in `Alerts` table (no deletions).
+**Visits** (`/visit`)
+- `POST /visit/create-visit` - Create visit
+- `PATCH /visit/update-status/{id}` - Update visit status
+- `GET /visit/active-visits` - Get active visits
 
-- **Visitor Check-In/Check-Out Workflows (Phase 7)**
-  - QR code verification:
-    - `POST /scan/verify` endpoint detects employee vs visitor QR codes.
-    - Validates QR code status (valid, expired, revoked, invalid).
-    - Returns type, status, and linked information.
-    - All verification attempts logged to `AccessLogs`.
-  - Visitor check-in:
-    - `POST /visitor/checkin` endpoint checks in visitors using QR code.
-    - Updates `Visits.status` to `checked_in` and sets `checkin_time`.
-    - Prevents double check-in (visitor must be in `pending` status).
-    - Inserts scan record into `VisitorScanLogs`.
-    - All check-ins logged to `AccessLogs`.
-  - Visitor check-out:
-    - `POST /visitor/checkout` endpoint checks out visitors using QR code.
-    - Updates `Visits.status` to `checked_out` and sets `checkout_time`.
-    - Prevents checkout before check-in (visitor must be `checked_in`).
-    - Prevents double checkout.
-    - Inserts scan record into `VisitorScanLogs`.
-    - All check-outs logged to `AccessLogs`.
-  - Database constraints enforced:
-    - Visitors cannot have multiple active visits simultaneously (pending or checked_in).
-    - QR codes cannot be used after expiry (validated in verify endpoint).
-    - All scanning operations create logs in scan tables.
+**QR Codes** (`/qr`)
+- `POST /qr/generate-employee` - Generate employee QR
+- `POST /qr/generate-visitor` - Generate visitor QR
+- `GET /qr/download/{id}` - Download QR image
+
+**Scanning** (`/scan`)
+- `POST /scan/verify` - Verify QR code
+- `POST /scan/employee` - Scan employee QR
+- `POST /scan/visitor` - Scan visitor QR
+- `GET /scan/alerts` - Get alerts
+- `GET /scan/employee/late-count/{id}` - Get late count
+
+**Site & Employees** (`/site`)
+- `GET /site/list` - Get all sites
+- `POST /site/create-site` - Create site (admin)
+- `GET /site/employees` - Get all employees
+- `POST /site/employees/create` - Create employee (admin)
+- `GET /site/employees/{id}/salary` - Calculate salary (admin)
+- `GET /site/employees/{id}/salary/export` - Export salary (admin)
+- `GET /site/departments` - Get departments
+
+**Attendance** (`/attendance`)
+- `POST /attendance/scan` - Scan employee QR for attendance
+
+**Logs** (`/logs`)
+- `GET /logs/access` - Get access logs
+- `GET /logs/export` - Export logs to Excel
+
+**Users** (`/users`)
+- `POST /users/create` - Create user (admin)
+- `DELETE /users/{id}` - Delete user (admin)
+- `GET /users/list` - List users (admin)
+
+**Alerts** (`/alerts`)
+- `POST /alerts/flag` - Flag visitor
+- `GET /alerts/flagged-visitors` - Get flagged visitors
+
+**Reports** (`/reports`)
+- `GET /reports/export` - Export reports
+
+**Email** (`/email`)
+- `POST /email/send-qr` - Send QR via email
+- `POST /email/alert-late` - Send late alerts
+
+**Health** (`/health`)
+- `GET /health` - Health check
+
+### Interactive API Documentation
+
+FastAPI provides automatic interactive documentation:
+- **Swagger UI:** `http://localhost:8000/docs`
+- **ReDoc:** `http://localhost:8000/redoc`
+
+For complete API documentation, see [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
 
 ---
 
-## API Endpoints (Phase 1–7)
+## Frontend Pages
 
-- **Auth (`/auth`, Phase 2)**
-  - `POST /auth/login`
-    - Returns JWT token in response.
-    - Token format: JWT with user_id, username, role, expiration (24 hours).
-    - Use token as `Authorization: Bearer <jwt_token>` for protected endpoints.
-  - `POST /auth/register-user` (admin only; requires JWT `Authorization` header)
-  - `PATCH /auth/deactivate-user/{user_id}` (admin only; requires JWT `Authorization` header)
-    - Deactivates a user while preserving all database records (Users and AccessLogs) for audit purposes.
-    - Prevents self-deactivation.
-    - Logs the deactivation action to `AccessLogs`.
+### Public Routes
+- `/login` - Login page
 
-- **Visitors (`/visitor`, Phase 3)**
-  - `POST /visitor/add-visitor`
-  - `GET /visitor/search-visitor?cnic=...` or `?visitor_id=...`
+### Protected Routes (All Users)
+- `/` - Dashboard (statistics and overview)
+- `/employee-qr` - Generate employee QR codes
+- `/visitor-entry` - Visitor registration and visit creation
+- `/checkin-out` - QR code scanning (camera or manual)
+- `/employee-attendance` - Employee attendance view
+- `/logs` - Access logs viewer
 
-- **Visits (`/visit`, Phase 4)**
-  - `POST /visit/create-visit`
-    - Requires `Authorization: Bearer <user_id>:<role>`.
-    - Body: `{ "visitor_id": int, "site_id": int, "purpose_details": str | null, "host_employee_id": int | null }`.
-  - `PATCH /visit/update-status/{visit_id}`
-    - Requires `Authorization: Bearer <user_id>:<role>`.
-    - Body: `{ "status": "pending" | "checked_in" | "checked_out" | "denied" }`.
-    - Enforces described status transition rules.
-  - `GET /visit/active-visits`
-    - Public read endpoint returning pending / checked-in visits with visitor + site info.
+### Admin-Only Routes
+- `/users` - User management
+- `/employees` - Employee management (with create form)
+- `/sites` - Site management
+- `/salary` - Salary calculation and export
+- `/profile` - Admin profile
 
-- **QR Codes (`/qr`, Phase 5)**
-  - `POST /qr/generate-employee`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "employee_id": int }`.
-    - Validates `employee_id` format (positive integer).
-    - Returns `emp_qr_id`, `code_value`, `employee_id`, `employee_name`.
-    - Generates permanent QR code for employee (no expiry).
-    - Returns 422 for invalid input format, 401 for invalid/expired token.
-  - `POST /qr/generate-visitor`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "visit_id": int, "recipient_email": "email@example.com" }`.
-    - Validates `visit_id` format and `recipient_email` using regex (RFC 5322 compliant).
-    - Returns `visitor_qr_id`, `code_value`, `visit_id`, `visitor_name`, `download_url`, `expiry_date`, `email_sent`.
-    - Generates temporary QR code for visitor visit (with expiry).
-    - Emails QR code as downloadable link to recipient.
-    - Returns 422 for invalid input format, 401 for invalid/expired token.
-  - `GET /qr/download/{visitor_qr_id}`
-    - Public endpoint (no authentication required).
-    - Validates `visitor_qr_id` format (positive integer).
-    - Returns PNG image file of visitor QR code.
-    - Validates QR code is active and not expired.
-    - Returns 422 for invalid ID format, 404 if QR not found/expired/revoked.
-
-- **QR Scanning (`/scan`, Phase 6)**
-  - `POST /scan/employee`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "emp_qr_id": int, "scan_status": "signin" | "signout" }`.
-    - Validates `emp_qr_id` format and `scan_status` (must be "signin" or "signout").
-    - Inserts record into `EmployeeScanLogs`.
-    - Detects late arrivals (> 9:10 AM).
-    - Returns scan details including `is_late` flag.
-    - Sends email alert if employee is late 3+ times in 30 days.
-    - Returns 422 for invalid input format, 401 for invalid/expired token.
-  - `POST /scan/visitor`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "visitor_qr_id": int, "scan_status": "signin" | "signout" }`.
-    - Validates `visitor_qr_id` format and `scan_status` (must be "signin" or "signout").
-    - Inserts record into `VisitorScanLogs`.
-    - Updates `Visits.status` accordingly.
-    - Validates QR status and expiry.
-    - Creates alert if QR is invalid/expired/revoked.
-    - Returns scan details and visit status update info.
-    - Returns 422 for invalid input format, 401 for invalid/expired token.
-  - `GET /scan/alerts`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Returns all active alerts from `Alerts` table.
-    - Includes visitor information for each alert.
-    - Returns 401 for invalid/expired token.
-  - `GET /scan/employee/late-count/{employee_id}`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Validates `employee_id` format (positive integer).
-    - Returns late arrival count for employee in last 30 days.
-    - Includes salary estimate based on recent scans.
-    - Indicates if threshold (3+ late arrivals) is reached.
-    - Returns 422 for invalid ID format, 401 for invalid/expired token.
-  - `POST /scan/verify`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "qr_code": "VIS_3_abc..." }` or `{ "qr_code": "EMP_1_xyz..." }`.
-    - Detects whether QR belongs to employee or visitor.
-    - Validates QR code status (valid, expired, revoked, invalid).
-    - Returns type, status, and linked information (employee_id or visitor_id).
-    - All verification attempts logged to `AccessLogs`.
-    - Returns 422 for invalid input format, 401 for invalid/expired token.
-
-- **Visitor Check-In/Check-Out (`/visitor`, Phase 7)**
-  - `POST /visitor/checkin`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "qr_code": "VIS_3_abc..." }`.
-    - Validates QR code format and status.
-    - Updates `Visits.status` to `checked_in` and sets `checkin_time`.
-    - Prevents double check-in (visitor must be in `pending` status).
-    - Inserts scan record into `VisitorScanLogs`.
-    - Returns success status, visit_id, visitor_name, checkin_time.
-    - Returns 422 for invalid QR format, 400 for business logic errors, 401 for invalid/expired token.
-  - `POST /visitor/checkout`
-    - Requires JWT `Authorization: Bearer <jwt_token>`.
-    - Body: `{ "qr_code": "VIS_3_abc..." }`.
-    - Validates QR code format and status.
-    - Updates `Visits.status` to `checked_out` and sets `checkout_time`.
-    - Prevents checkout before check-in (visitor must be `checked_in`).
-    - Prevents double checkout.
-    - Inserts scan record into `VisitorScanLogs`.
-    - Returns success status, visit_id, visitor_name, checkin_time, checkout_time.
-    - Returns 422 for invalid QR format, 400 for business logic errors, 401 for invalid/expired token.
+### Features
+- JWT token management with automatic refresh
+- Toast notifications for user feedback
+- Loading states and spinners
+- Input validation
+- QR code scanning via camera
+- Responsive design
+- Error handling
+- Protected routes with role-based access
 
 ---
 
-## Notes
+## Documentation
 
-- **JWT Authentication**: Auth endpoints return JWT tokens. Pass it as `Authorization: Bearer <jwt_token>` header for protected endpoints. Tokens expire after 24 hours. Invalid or expired tokens return 401 Unauthorized.
-- **CNIC format**: Visitor endpoints use the `Visitors` table and expect CNIC in the database format `XXXXX-XXXXXXX-X`.
-- **Schema**: `backend/database/schema.sql` defines all tables and must remain the single source of truth for the DB structure (no in-app schema changes).
-- **User management**: Users are never deleted from the database. The `PATCH /auth/deactivate-user/{user_id}` endpoint deactivates users while preserving all records (Users and AccessLogs) for audit purposes.
-- **QR codes**: QR code images are stored in `backend/generated_qr/` directory (gitignored). Employee QR codes are permanent (no expiry), while visitor QR codes have configurable expiry (default 24 hours). Visitor QR codes are emailed as downloadable links, not embedded as base64.
-- **Email configuration**: Email functionality requires SMTP credentials in `config.ini`. If not configured, QR generation will succeed but email sending will be skipped (logged in response).
-- **QR scanning**: Employee sign-in/out status is determined from `EmployeeScanLogs` (last scan status). Visitor scans update `Visits.status` automatically. Late arrivals are detected for check-ins after 9:10 AM.
-- **Alerts**: Alerts are created in `Alerts` table for invalid/expired/revoked visitor QR codes. All alerts are preserved (no deletions). Email alerts are sent to admin when employees are late 3+ times in 30 days.
-- **Late arrival detection**: Late check-ins are detected when scan time is after 9:10 AM. Late count is maintained per employee for the last 30 days. Salary estimates are calculated using `(checkout_time - checkin_time) × hourly_rate` from `Employees` table.
-- **Input Validation**: All endpoints validate input using regex patterns. Invalid emails, IDs, or scan statuses return 422 Unprocessable Entity with clear error messages. Email validation uses RFC 5322 compliant regex. ID validation ensures positive integers within valid range.
-- **Security**: Protected endpoints require valid JWT tokens. Unauthorized access returns 401/403. All sensitive operations (QR generation, scanning, status updates) are protected by JWT authentication.
+### Software Design Specification (SDS)
 
+Complete SDS documents available in `docs/`:
+- **SDS_01_Introduction.md** - Purpose, scope, definitions
+- **SDS_02_System_Overview.md** - Features, use cases, architecture
+- **SDS_03_Architectural_Design.md** - System architecture, components
+- **SDS_04_Detailed_Design.md** - Component design, data structures
+- **SDS_05_User_Interface_Design.md** - UI/UX design, wireframes
+- **SDS_06_External_Interface_Design.md** - API specifications, interfaces
+- **SDS_07_Non_Functional_Requirements.md** - Performance, security, reliability
+- **SDS_08_Design_Constraints.md** - Technical constraints, limitations
+- **SDS_09_Assumptions_Dependencies.md** - Assumptions, dependencies
+- **SDS_10_Appendices.md** - Glossary, references, diagrams
+
+### Additional Documentation
+
+- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - Complete API endpoint documentation
+- **[DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)** - Database schema and data dictionary
+- **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** - Detailed installation and setup instructions
+- **[SYSTEM_OVERVIEW.md](docs/SYSTEM_OVERVIEW.md)** - System architecture and features
+- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide
+- **[docs/README.md](docs/README.md)** - Documentation index
+
+---
+
+## Database Schema
+
+The system uses 13 core tables:
+
+1. **Users** - System user accounts
+2. **Roles** - User roles (admin, security)
+3. **Visitors** - Visitor information
+4. **Visits** - Visit records
+5. **Employees** - Employee information
+6. **Departments** - Employee departments
+7. **Sites** - Physical locations
+8. **EmployeeQRCodes** - Employee QR codes
+9. **VisitorQRCodes** - Visitor QR codes
+10. **EmployeeScanLogs** - Employee attendance logs
+11. **VisitorScanLogs** - Visitor scan logs
+12. **AccessLogs** - Audit trail
+13. **Alerts** - Security alerts
+
+See `backend/database/schema.sql` for complete schema and [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md) for detailed documentation.
+
+---
+
+## Security Features
+
+- **JWT Authentication** - Secure token-based authentication (24-hour expiration)
+- **Password Hashing** - SHA256 hashing for passwords
+- **Input Validation** - Regex-based validation for CNIC, email, names
+- **SQL Injection Prevention** - Parameterized queries throughout
+- **CORS Configuration** - Controlled cross-origin access
+- **Role-Based Access Control** - Admin and Security roles with endpoint-level protection
+- **Audit Logging** - All actions logged to AccessLogs table
+
+---
+
+## Troubleshooting
+
+### Backend Issues
+
+**Database Connection Error:**
+- Verify MySQL is running
+- Check credentials in `backend/config/config.ini`
+- Ensure database `Visitor_Management_System` exists
+
+**Import Errors:**
+- Verify all packages installed: `pip list`
+- Reinstall: `pip install -r requirements.txt --force-reinstall`
+
+**Port Already in Use:**
+- Change port in `main.py` or kill process using port 8000
+
+### Frontend Issues
+
+**API Connection Error:**
+- Verify backend is running
+- Check `VITE_API_URL` in `.env`
+- Check browser console for CORS errors
+
+**Build Errors:**
+- Clear node_modules: `rm -rf node_modules && npm install`
+- Clear cache: `npm cache clean --force`
+
+### Database Issues
+
+**Schema Errors:**
+- Ensure MySQL version is 8.0+
+- Drop and recreate database if needed
+- Check for existing conflicting tables
+
+---
+
+## Development
+
+### Code Structure
+
+- **Backend:** FastAPI with service layer pattern
+- **Frontend:** React with Context API for state management
+- **Database:** MySQL with parameterized queries
+- **Authentication:** JWT tokens stored in localStorage
+
+### Adding New Features
+
+1. Backend: Add service function in `backend/services/`
+2. Backend: Add endpoint in `backend/api/`
+3. Frontend: Add page component in `frontend/src/pages/`
+4. Frontend: Add route in `frontend/src/App.jsx`
+5. Update documentation
+
+---
+
+## License
+
+[Your License Here]
+
+---
+
+## Support
+
+For detailed documentation, see the [docs/](docs/) folder.
+
+For API documentation, visit `http://localhost:8000/docs` when the backend is running.
+
+---
+
+**Version 1.0.0 - Production Ready**
