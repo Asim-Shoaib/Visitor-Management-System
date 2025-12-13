@@ -441,3 +441,33 @@ def get_visitor_qr_file(visitor_qr_id: int) -> Optional[str]:
     
     return filepath
 
+
+def get_employee_qr_file(emp_qr_id: int) -> Optional[str]:
+    """
+    Get the file path for an employee QR code by emp_qr_id.
+    Validates that the QR code exists and is active.
+    Returns file path or None if not found/invalid.
+    """
+    qr_record = db.fetchone("""
+        SELECT eqr.code_value, eqr.employee_id, eqr.status
+        FROM EmployeeQRCodes eqr
+        WHERE eqr.emp_qr_id = %s
+    """, (emp_qr_id,))
+    
+    if not qr_record:
+        return None
+    
+    # Check if revoked (employee QR codes are permanent, no expiry check needed)
+    if qr_record["status"] != "active":
+        return None
+    
+    # Construct file path
+    qr_dir = _ensure_qr_directory()
+    filename = f"emp_{qr_record['employee_id']}_{qr_record['code_value']}.png"
+    filepath = os.path.join(qr_dir, filename)
+    
+    # Check if file exists
+    if not os.path.exists(filepath):
+        return None
+    
+    return filepath

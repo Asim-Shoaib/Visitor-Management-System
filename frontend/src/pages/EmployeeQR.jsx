@@ -47,9 +47,9 @@ const EmployeeQR = () => {
 
   const downloadQR = () => {
     if (qrData?.code_value) {
-      // Construct download URL
+      // Construct download URL for employee QR
       const qrId = qrData.emp_qr_id
-      const downloadUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/qr/download/${qrId}`
+      const downloadUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/qr/download/employee/${qrId}`
       window.open(downloadUrl, '_blank')
     }
   }

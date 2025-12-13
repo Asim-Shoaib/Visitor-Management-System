@@ -7,6 +7,7 @@ from backend.services.qr_service import (
     generate_employee_qr,
     generate_visitor_qr,
     get_visitor_qr_file,
+    get_employee_qr_file,
     debug_visit_info,
 )
 from backend.utils.auth_dependency import get_current_user_id
@@ -160,10 +161,40 @@ def debug_visit_endpoint(
     return result
 
 
+@router.get("/download/employee/{emp_qr_id}")
+def download_employee_qr_endpoint(emp_qr_id: int):
+    """
+    Download an employee QR code image by emp_qr_id.
+    Public endpoint (no authentication required).
+    Validates emp_qr_id format and that the QR code is active.
+    """
+    # Validate ID format
+    if not validate_id_format(emp_qr_id):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid emp_qr_id format. Must be a positive integer."
+        )
+    
+    file_path = get_employee_qr_file(emp_qr_id)
+    
+    if not file_path:
+        raise HTTPException(
+            status_code=404,
+            detail="QR code not found or revoked"
+        )
+    
+    return FileResponse(
+        file_path,
+        media_type="image/png",
+        filename=f"employee_qr_{emp_qr_id}.png"
+    )
+
+
 @router.get("/download/{visitor_qr_id}")
 def download_visitor_qr_endpoint(visitor_qr_id: int):
     """
     Download a visitor QR code image by visitor_qr_id.
+    Also checks employee QR codes if visitor QR not found (backward compatibility).
     Public endpoint (no authentication required).
     Validates visitor_qr_id format and that the QR code is active and not expired.
     """
@@ -174,7 +205,18 @@ def download_visitor_qr_endpoint(visitor_qr_id: int):
             detail="Invalid visitor_qr_id format. Must be a positive integer."
         )
     
+    # Try visitor QR code first
     file_path = get_visitor_qr_file(visitor_qr_id)
+    
+    # If not found, try as employee QR code (backward compatibility)
+    if not file_path:
+        file_path = get_employee_qr_file(visitor_qr_id)
+        if file_path:
+            return FileResponse(
+                file_path,
+                media_type="image/png",
+                filename=f"employee_qr_{visitor_qr_id}.png"
+            )
     
     if not file_path:
         raise HTTPException(
