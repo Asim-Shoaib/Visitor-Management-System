@@ -168,13 +168,17 @@ def scan_employee_qr(emp_qr_id: int, scan_status: str, scanned_by_user_id: int) 
     
     # Validate QR code exists and is active
     qr_record = db.fetchone("""
-        SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, e.name as employee_name
+        SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, eqr.expiry_date, e.name as employee_name
         FROM EmployeeQRCodes eqr
         JOIN Employees e ON eqr.employee_id = e.employee_id
         WHERE eqr.emp_qr_id = %s
     """, (emp_qr_id,))
     
     if not qr_record:
+        return None
+    
+    # Check if expired
+    if qr_record.get("expiry_date") and datetime.now() > qr_record["expiry_date"]:
         return None
     
     if qr_record["status"] != "active":
@@ -404,7 +408,7 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
     if normalized.startswith("EMP_"):
         # Use deterministic trimmed, case-sensitive matching to avoid hidden char mismatches
         sql = """
-            SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, e.name as employee_name, eqr.code_value
+            SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, eqr.expiry_date, e.name as employee_name, eqr.code_value
             FROM EmployeeQRCodes eqr
             JOIN Employees e ON eqr.employee_id = e.employee_id
             WHERE BINARY TRIM(eqr.code_value) = BINARY %s
@@ -432,6 +436,20 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
                 "message": "QR code not found"
             }
         
+        # Check expiry for employee QR
+        if qr_record.get("expiry_date") and datetime.now() > qr_record["expiry_date"]:
+            log_action(scanned_by_user_id, "verify_qr", f"Expired employee QR code: {raw_value!r}")
+            return {
+                "type": "employee",
+                "status": "expired",
+                "qr_code": raw_value,
+                "employee_id": qr_record["employee_id"],
+                "employee_name": qr_record["employee_name"],
+                "emp_qr_id": qr_record["emp_qr_id"],
+                "expiry_date": qr_record["expiry_date"].isoformat(),
+                "message": "QR code has expired"
+            }
+
         if qr_record["status"] != "active":
             log_action(scanned_by_user_id, "verify_qr", f"Revoked employee QR code: {raw_value!r}")
             return {
@@ -451,7 +469,8 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
             "emp_qr_id": qr_record["emp_qr_id"],
             "employee_id": qr_record["employee_id"],
             "employee_name": qr_record["employee_name"],
-            "linked_id": qr_record["emp_qr_id"]
+            "linked_id": qr_record["emp_qr_id"],
+            "expiry_date": qr_record["expiry_date"].isoformat() if qr_record.get("expiry_date") else None
         }
     
     # Check if it's a visitor QR code (starts with VIS_)
@@ -488,11 +507,11 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
         
         # Check if expired
         if qr_record["expiry_date"] and datetime.now() > qr_record["expiry_date"]:
-            log_action(scanned_by_user_id, "verify_qr", f"Expired visitor QR code: {qr_code}")
+            log_action(scanned_by_user_id, "verify_qr", f"Expired visitor QR code: {raw_value!r}")
             return {
                 "type": "visitor",
                 "status": "expired",
-                "qr_code": qr_code,
+                "qr_code": raw_value,
                 "visitor_qr_id": qr_record["visitor_qr_id"],
                 "visit_id": qr_record["visit_id"],
                 "visitor_id": qr_record["visitor_id"],
@@ -503,11 +522,11 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
         
         # Check if revoked
         if qr_record["status"] != "active":
-            log_action(scanned_by_user_id, "verify_qr", f"Revoked visitor QR code: {qr_code}")
+            log_action(scanned_by_user_id, "verify_qr", f"Revoked visitor QR code: {raw_value!r}")
             return {
                 "type": "visitor",
                 "status": "revoked",
-                "qr_code": qr_code,
+                "qr_code": raw_value,
                 "visitor_qr_id": qr_record["visitor_qr_id"],
                 "visit_id": qr_record["visit_id"],
                 "visitor_id": qr_record["visitor_id"],
@@ -524,15 +543,16 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
             "visit_id": qr_record["visit_id"],
             "visitor_id": qr_record["visitor_id"],
             "visitor_name": qr_record["visitor_name"],
-            "linked_id": qr_record["visitor_qr_id"]
+            "linked_id": qr_record["visitor_qr_id"],
+            "expiry_date": qr_record["expiry_date"].isoformat() if qr_record.get("expiry_date") else None
         }
     
     # Unknown QR code format
-    log_action(scanned_by_user_id, "verify_qr", f"Unknown QR code format: {qr_code}")
+    log_action(scanned_by_user_id, "verify_qr", f"Unknown QR code format: {raw_value!r}")
     return {
         "type": "unknown",
         "status": "invalid",
-        "qr_code": qr_code,
+        "qr_code": raw_value,
         "message": "Unknown QR code format"
     }
 

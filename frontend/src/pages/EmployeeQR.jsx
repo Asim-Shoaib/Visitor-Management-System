@@ -140,8 +140,8 @@ const EmployeeQR = () => {
             </div>
 
             <div style={{ marginTop: '20px', padding: '15px', background: '#fff3cd', borderRadius: '5px', border: '1px solid #ffc107' }}>
-              <strong>Note:</strong> Employee QR codes are permanent and do not expire. 
-              Keep this QR code secure as it provides access to the system.
+              <strong>Expiry:</strong> {qrData.expiry_date ? new Date(qrData.expiry_date).toLocaleString() : 'No expiry set'}
+              <div style={{ marginTop: '8px' }}>Keep this QR code secure as it provides access to the system.</div>
             </div>
           </div>
         )}
@@ -152,7 +152,7 @@ const EmployeeQR = () => {
         <h2>Instructions</h2>
         <ol style={{ lineHeight: '1.8' }}>
           <li>Select an employee from the dropdown list</li>
-          <li>Click "Generate QR Code" to create a permanent QR code for the employee</li>
+          <li>Click "Generate QR Code" to create a QR code for the employee</li>
           <li>Download the QR code image and provide it to the employee</li>
           <li>The employee can use this QR code for check-in/check-out</li>
         </ol>

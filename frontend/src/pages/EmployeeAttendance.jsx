@@ -44,11 +44,37 @@ const EmployeeAttendance = () => {
           fps: 10,
           qrbox: { width: 250, height: 250 }
         },
-        async (decodedText) => {
-          await handleScan(decodedText)
-          html5QrCode.stop()
-          setScanning(false)
-          setScanner(null)
+        async (decodedText, decodedResult) => {
+          try {
+            // Temporary debug logging as requested: raw repr, type, length
+            const raw = decodedText ?? decodedResult
+            console.debug('scan raw value:', raw, 'type:', typeof raw, 'length:', (typeof raw === 'string' && raw.length) || (raw && JSON.stringify(raw).length))
+
+            // Normalize scanned value to a trimmed string
+            let value = ''
+            if (typeof decodedText === 'string') {
+              value = decodedText.trim()
+            } else if (decodedResult && typeof decodedResult === 'object') {
+              // html5-qrcode may provide decodedText or decodedResult; prefer decodedText-like fields
+              value = (decodedResult.decodedText || decodedResult.text || JSON.stringify(decodedResult) || '').trim()
+            } else {
+              value = String(decodedText).trim()
+            }
+
+            if (!value) {
+              toast.error('Scanned QR code is empty or invalid')
+              return
+            }
+
+            await handleScan(value)
+          } catch (err) {
+            console.error('Error handling scanned QR:', err)
+            toast.error('Failed to process scanned QR code')
+          } finally {
+            try { await html5QrCode.stop() } catch (_) {}
+            setScanning(false)
+            setScanner(null)
+          }
         },
         (errorMessage) => {
           // Ignore scanning errors

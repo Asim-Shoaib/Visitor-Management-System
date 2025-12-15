@@ -31,12 +31,34 @@ const CheckInOut = () => {
           fps: 10,
           qrbox: { width: 250, height: 250 }
         },
-        (decodedText) => {
-          setQrCode(decodedText)
-          html5QrCode.stop()
-          setScanning(false)
-          setScanner(null)
-          toast.success('QR code scanned!')
+        (decodedText, decodedResult) => {
+          try {
+            const raw = decodedText ?? decodedResult
+            console.debug('scan raw value:', raw, 'type:', typeof raw, 'length:', (typeof raw === 'string' && raw.length) || (raw && JSON.stringify(raw).length))
+            let value = ''
+            if (typeof decodedText === 'string') {
+              value = decodedText.trim()
+            } else if (decodedResult && typeof decodedResult === 'object') {
+              value = (decodedResult.decodedText || decodedResult.text || JSON.stringify(decodedResult) || '').trim()
+            } else {
+              value = String(decodedText).trim()
+            }
+
+            if (!value) {
+              toast.error('Scanned QR code is empty or invalid')
+              return
+            }
+
+            setQrCode(value)
+            toast.success('QR code scanned!')
+          } catch (err) {
+            console.error('Error processing scanned QR:', err)
+            toast.error('Failed to process scanned QR code')
+          } finally {
+            try { html5QrCode.stop() } catch (_) {}
+            setScanning(false)
+            setScanner(null)
+          }
         },
         (errorMessage) => {
           // Ignore errors
@@ -269,12 +291,14 @@ const CheckInOut = () => {
                 <>
                   <p><strong>Visitor:</strong> {verificationResult.visitor_name || 'N/A'}</p>
                   <p><strong>Visit ID:</strong> {verificationResult.visit_id || 'N/A'}</p>
+                  <p><strong>Expiry:</strong> {verificationResult.expiry_date ? new Date(verificationResult.expiry_date).toLocaleString() : 'N/A'}</p>
                 </>
               )}
               {verificationResult.type === 'employee' && (
                 <>
                   <p><strong>Employee:</strong> {verificationResult.employee_name || 'N/A'}</p>
                   <p><strong>Employee ID:</strong> {verificationResult.employee_id || 'N/A'}</p>
+                  <p><strong>Expiry:</strong> {verificationResult.expiry_date ? new Date(verificationResult.expiry_date).toLocaleString() : 'N/A'}</p>
                 </>
               )}
               {verificationResult.message && (
