@@ -34,19 +34,19 @@ def create_visit_endpoint(
     if host_employee_id == "" or host_employee_id == 0:
         host_employee_id = None
     
-    visit_id = create_visit(
-        visitor_id=payload.visitor_id,
-        site_id=payload.site_id,
-        purpose_details=payload.purpose_details,
-        host_employee_id=host_employee_id,
-        requested_by_user_id=current_user_id,
-    )
-    if not visit_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Unable to create visit. Possible reasons: visitor not found, site not found, host employee not found (if provided), or visitor already has an active visit.",
+    try:
+        visit_id = create_visit(
+            visitor_id=payload.visitor_id,
+            site_id=payload.site_id,
+            purpose_details=payload.purpose_details,
+            host_employee_id=host_employee_id,
+            requested_by_user_id=current_user_id,
         )
-    return {"visit_id": visit_id}
+        return {"visit_id": visit_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
 @router.patch("/update-status/{visit_id}")

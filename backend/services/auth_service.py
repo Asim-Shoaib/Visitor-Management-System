@@ -20,14 +20,25 @@ def login(username: str, password: str) -> Optional[Dict]:
         return None
 
     sql = """
-        SELECT u.user_id, u.username, r.role_name
+        SELECT u.user_id, u.username, u.password_hash, r.role_name
         FROM Users u
         JOIN Roles r ON u.role_id = r.role_id
-        WHERE u.username = %s AND u.password_hash = %s
+        WHERE u.username = %s
     """
 
-    user = db.fetchone(sql, (username, hash_password(password)))
+    try:
+        user = db.fetchone(sql, (username,))
+    except Exception:
+        return None
+
     if not user:
+        return None
+
+    stored_hash = user.get("password_hash")
+    if not stored_hash:
+        return None
+
+    if stored_hash != hash_password(password):
         return None
 
     log_action(user["user_id"], "login", f"User {username} logged in")

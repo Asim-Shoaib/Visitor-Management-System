@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, JSONResponse
 import os
 
 from backend.api import auth_api, visitor_api, visit_api, qr_api, scan_api, logs_api, site_api, email_api, attendance_api, user_management_api, alert_api, reports_api
+from backend.api import debug_api
 
 app = FastAPI(title="Visitor Management System API", version="1.0.0")
 
@@ -30,6 +31,7 @@ app.include_router(attendance_api.router)
 app.include_router(user_management_api.router)
 app.include_router(alert_api.router)
 app.include_router(reports_api.router)
+app.include_router(debug_api.router)
 
 @app.get("/health")
 def health():

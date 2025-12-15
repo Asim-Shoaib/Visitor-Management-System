@@ -115,7 +115,7 @@ const EmployeeQR = () => {
                 <strong>Status:</strong> <span style={{ color: '#28a745', fontWeight: 'bold' }}>{qrData.status || 'active'}</span>
               </div>
               <div>
-                <strong>Issue Date:</strong> {new Date(qrData.issue_date).toLocaleString()}
+                <strong>Issue Date:</strong> {qrData.issue_date ? new Date(qrData.issue_date).toLocaleString() : 'N/A'}
               </div>
             </div>
 

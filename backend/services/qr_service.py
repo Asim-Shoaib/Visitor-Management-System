@@ -11,6 +11,9 @@ from email.mime.multipart import MIMEMultipart
 
 from backend.database.connection import Database
 from backend.utils.db_logger import log_action
+import logging
+
+logger = logging.getLogger(__name__)
 
 db = Database()
 
@@ -107,7 +110,12 @@ def generate_employee_qr(employee_id: int, requested_by_user_id: int) -> Optiona
     Returns dict with emp_qr_id, code_value, file_path, or None on failure.
     """
     # Validate employee exists
-    employee = db.fetchone("SELECT employee_id, name FROM Employees WHERE employee_id = %s", (employee_id,))
+    try:
+        employee = db.fetchone("SELECT employee_id, name FROM Employees WHERE employee_id = %s", (employee_id,))
+    except Exception as e:
+        logger.exception("DB error fetching employee for QR generation")
+        return None
+
     if not employee:
         return None
     
@@ -115,7 +123,12 @@ def generate_employee_qr(employee_id: int, requested_by_user_id: int) -> Optiona
     code_value = f"EMP_{employee_id}_{uuid.uuid4().hex[:12]}"
     
     # Check for duplicate code_value (shouldn't happen, but safety check)
-    existing = db.fetchone("SELECT emp_qr_id FROM EmployeeQRCodes WHERE code_value = %s", (code_value,))
+    try:
+        existing = db.fetchone("SELECT emp_qr_id FROM EmployeeQRCodes WHERE code_value = %s", (code_value,))
+    except Exception as e:
+        logger.exception("DB error checking duplicate employee QR code")
+        return None
+
     if existing:
         return None  # Retry would be needed, but for now return None
     
@@ -133,7 +146,11 @@ def generate_employee_qr(employee_id: int, requested_by_user_id: int) -> Optiona
         VALUES (%s, %s, %s, NULL, 'active')
     """
     issue_date = datetime.now()
-    success = db.execute(insert_sql, (code_value, employee_id, issue_date))
+    try:
+        success = db.execute(insert_sql, (code_value, employee_id, issue_date))
+    except Exception as e:
+        logger.exception("DB error inserting employee QR code")
+        success = False
     
     if not success:
         # Clean up file if DB insert failed
@@ -144,7 +161,12 @@ def generate_employee_qr(employee_id: int, requested_by_user_id: int) -> Optiona
         return None
     
     # Get the inserted emp_qr_id
-    qr_record = db.fetchone("SELECT emp_qr_id FROM EmployeeQRCodes WHERE code_value = %s", (code_value,))
+    try:
+        qr_record = db.fetchone("SELECT emp_qr_id, issue_date, expiry_date, status FROM EmployeeQRCodes WHERE code_value = %s", (code_value,))
+    except Exception as e:
+        logger.exception("DB error fetching inserted employee QR record")
+        return None
+
     if not qr_record:
         return None
     
@@ -161,6 +183,9 @@ def generate_employee_qr(employee_id: int, requested_by_user_id: int) -> Optiona
         "file_path": filepath,
         "employee_id": employee_id,
         "employee_name": employee["name"],
+        "issue_date": qr_record["issue_date"].isoformat() if qr_record.get("issue_date") else None,
+        "expiry_date": qr_record["expiry_date"].isoformat() if qr_record.get("expiry_date") else None,
+        "status": qr_record.get("status", "active")
     }
 
 
@@ -208,13 +233,17 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
         return None
     
     # Check if there's already an active QR code for this visit
-    existing_qr = db.fetchone("""
-        SELECT visitor_qr_id, code_value, status, expiry_date
-        FROM VisitorQRCodes
-        WHERE visit_id = %s AND status = 'active'
-        ORDER BY issue_date DESC
-        LIMIT 1
-    """, (visit_id,))
+    try:
+        existing_qr = db.fetchone("""
+            SELECT visitor_qr_id, code_value, status, expiry_date
+            FROM VisitorQRCodes
+            WHERE visit_id = %s AND status = 'active'
+            ORDER BY issue_date DESC
+            LIMIT 1
+        """, (visit_id,))
+    except Exception as e:
+        logger.exception("DB error checking existing visitor QR")
+        return None
     
     if existing_qr:
         # Check if existing QR is expired
@@ -296,7 +325,11 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
         INSERT INTO VisitorQRCodes (code_value, visit_id, issue_date, expiry_date, status)
         VALUES (%s, %s, %s, %s, 'active')
     """
-    success = db.execute(insert_sql, (code_value, visit_id, issue_date, expiry_date))
+    try:
+        success = db.execute(insert_sql, (code_value, visit_id, issue_date, expiry_date))
+    except Exception as e:
+        logger.exception("DB error inserting visitor QR code")
+        success = False
     
     if not success:
         log_action(
@@ -360,6 +393,7 @@ def generate_visitor_qr(visit_id: int, recipient_email: str, requested_by_user_i
         "visitor_name": visit["full_name"],
         "download_url": download_url,
         "download_path": download_path,  # Relative path for API clients
+        "issue_date": issue_date.isoformat(),
         "expiry_date": expiry_date.isoformat(),
         "email_sent": email_sent,
     }

@@ -77,6 +77,9 @@ def generate_employee_qr_endpoint(
         "code_value": result["code_value"],
         "employee_id": result["employee_id"],
         "employee_name": result["employee_name"],
+        "issue_date": result.get("issue_date"),
+        "expiry_date": result.get("expiry_date"),
+        "status": result.get("status", "active"),
         "message": "Employee QR code generated successfully"
     }
 

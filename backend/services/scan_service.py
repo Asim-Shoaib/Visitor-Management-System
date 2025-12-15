@@ -383,67 +383,106 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
     Verify a QR code and determine if it belongs to an employee or visitor.
     Returns validation status and linked information.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if not qr_code or not qr_code.strip():
         return None
-    
-    qr_code = qr_code.strip()
+
+    raw_value = qr_code
+    # Normalize: strip leading/trailing whitespace and remove newline/carriage returns
+    normalized = raw_value.strip()
+    normalized = normalized.replace('\n', '').replace('\r', '')
+
+    # Defensive: also remove vertical/tab control chars but preserve internal spaces and other characters
+    normalized = normalized.replace('\t', '').replace('\x0b', '').replace('\x0c', '')
+
+    # Log raw and normalized values for debugging
+    logger.debug("verify_qr_code raw=%r normalized=%r", raw_value, normalized)
     
     # Check if it's an employee QR code (starts with EMP_)
-    if qr_code.startswith("EMP_"):
-        qr_record = db.fetchone("""
-            SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, e.name as employee_name
+    if normalized.startswith("EMP_"):
+        # Use deterministic trimmed, case-sensitive matching to avoid hidden char mismatches
+        sql = """
+            SELECT eqr.emp_qr_id, eqr.employee_id, eqr.status, e.name as employee_name, eqr.code_value
             FROM EmployeeQRCodes eqr
             JOIN Employees e ON eqr.employee_id = e.employee_id
-            WHERE eqr.code_value = %s
-        """, (qr_code,))
+            WHERE BINARY TRIM(eqr.code_value) = BINARY %s
+        """
+        logger.debug("verify_qr_code executing SQL: %s params=%r", sql.strip(), (normalized,))
+        qr_record = db.fetchone(sql, (normalized,))
+
+        # If a match is found but stored value contains surrounding whitespace or control chars,
+        # normalize stored value to the trimmed normalized value to clean data (one-time fix)
+        try:
+            if qr_record and qr_record.get('code_value') and qr_record['code_value'] != normalized:
+                update_sql = "UPDATE EmployeeQRCodes SET code_value = %s WHERE emp_qr_id = %s"
+                logger.info("Trimming stored EmployeeQRCodes.code_value for emp_qr_id=%s", qr_record['emp_qr_id'])
+                db.execute(update_sql, (normalized, qr_record['emp_qr_id']))
+                qr_record['code_value'] = normalized
+        except Exception:
+            logger.exception("Failed to trim stored EmployeeQRCodes.code_value")
         
         if not qr_record:
-            log_action(scanned_by_user_id, "verify_qr", f"Invalid employee QR code: {qr_code}")
+            log_action(scanned_by_user_id, "verify_qr", f"Invalid employee QR code: {raw_value!r}")
             return {
                 "type": "employee",
                 "status": "invalid",
-                "qr_code": qr_code,
+                "qr_code": raw_value,
                 "message": "QR code not found"
             }
         
         if qr_record["status"] != "active":
-            log_action(scanned_by_user_id, "verify_qr", f"Revoked employee QR code: {qr_code}")
+            log_action(scanned_by_user_id, "verify_qr", f"Revoked employee QR code: {raw_value!r}")
             return {
                 "type": "employee",
                 "status": "revoked",
-                "qr_code": qr_code,
+                "qr_code": raw_value,
                 "employee_id": qr_record["employee_id"],
                 "employee_name": qr_record["employee_name"],
                 "message": "QR code has been revoked"
             }
         
-        log_action(scanned_by_user_id, "verify_qr", f"Verified employee QR code: {qr_code} (employee_id={qr_record['employee_id']})")
+        log_action(scanned_by_user_id, "verify_qr", f"Verified employee QR code: {raw_value!r} (employee_id={qr_record['employee_id']})")
         return {
             "type": "employee",
             "status": "valid",
-            "qr_code": qr_code,
+            "qr_code": raw_value,
             "emp_qr_id": qr_record["emp_qr_id"],
             "employee_id": qr_record["employee_id"],
             "employee_name": qr_record["employee_name"],
+            "linked_id": qr_record["emp_qr_id"]
         }
     
     # Check if it's a visitor QR code (starts with VIS_)
-    elif qr_code.startswith("VIS_"):
-        qr_record = db.fetchone("""
+    elif normalized.startswith("VIS_"):
+        sql = """
             SELECT vqr.visitor_qr_id, vqr.visit_id, vqr.status, vqr.expiry_date,
-                   v.visitor_id, vis.full_name as visitor_name
+                   v.visitor_id, vis.full_name as visitor_name, vqr.code_value
             FROM VisitorQRCodes vqr
             JOIN Visits v ON vqr.visit_id = v.visit_id
             JOIN Visitors vis ON v.visitor_id = vis.visitor_id
-            WHERE vqr.code_value = %s
-        """, (qr_code,))
+            WHERE BINARY TRIM(vqr.code_value) = BINARY %s
+        """
+        logger.debug("verify_qr_code executing SQL: %s params=%r", sql.strip(), (normalized,))
+        qr_record = db.fetchone(sql, (normalized,))
+
+        # Clean stored value if it contains surrounding whitespace/control chars
+        try:
+            if qr_record and qr_record.get('code_value') and qr_record['code_value'] != normalized:
+                update_sql = "UPDATE VisitorQRCodes SET code_value = %s WHERE visitor_qr_id = %s"
+                logger.info("Trimming stored VisitorQRCodes.code_value for visitor_qr_id=%s", qr_record['visitor_qr_id'])
+                db.execute(update_sql, (normalized, qr_record['visitor_qr_id']))
+                qr_record['code_value'] = normalized
+        except Exception:
+            logger.exception("Failed to trim stored VisitorQRCodes.code_value")
         
         if not qr_record:
-            log_action(scanned_by_user_id, "verify_qr", f"Invalid visitor QR code: {qr_code}")
+            log_action(scanned_by_user_id, "verify_qr", f"Invalid visitor QR code: {raw_value!r}")
             return {
                 "type": "visitor",
                 "status": "invalid",
-                "qr_code": qr_code,
+                "qr_code": raw_value,
                 "message": "QR code not found"
             }
         
@@ -476,15 +515,16 @@ def verify_qr_code(qr_code: str, scanned_by_user_id: int) -> Optional[Dict]:
                 "message": "QR code has been revoked"
             }
         
-        log_action(scanned_by_user_id, "verify_qr", f"Verified visitor QR code: {qr_code} (visit_id={qr_record['visit_id']})")
+        log_action(scanned_by_user_id, "verify_qr", f"Verified visitor QR code: {raw_value!r} (visit_id={qr_record['visit_id']})")
         return {
             "type": "visitor",
             "status": "valid",
-            "qr_code": qr_code,
+            "qr_code": raw_value,
             "visitor_qr_id": qr_record["visitor_qr_id"],
             "visit_id": qr_record["visit_id"],
             "visitor_id": qr_record["visitor_id"],
             "visitor_name": qr_record["visitor_name"],
+            "linked_id": qr_record["visitor_qr_id"]
         }
     
     # Unknown QR code format

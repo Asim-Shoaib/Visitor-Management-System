@@ -16,23 +16,31 @@ def add_visitor(full_name: str, cnic: str, contact_number: Optional[str] = None)
     Returns the new visitor_id on success, otherwise None.
     """
     if not validate_name(full_name):
-        return None
+        raise ValueError("Invalid full name")
     if not validate_cnic(cnic):
-        return None
+        raise ValueError("Invalid CNIC format")
     if contact_number and not validate_contact_number(contact_number):
-        return None
+        raise ValueError("Invalid contact number format")
 
-    existing = db.fetchone("SELECT visitor_id FROM Visitors WHERE cnic = %s", (cnic,))
+    try:
+        existing = db.fetchone("SELECT visitor_id FROM Visitors WHERE cnic = %s", (cnic,))
+    except Exception as e:
+        raise ValueError(f"Database error when checking existing visitor: {e}")
+
     if existing:
-        return None
+        raise ValueError("Visitor with this CNIC already exists")
 
     insert_sql = """
         INSERT INTO Visitors (full_name, cnic, contact_number)
         VALUES (%s, %s, %s)
     """
-    ok = db.execute(insert_sql, (full_name.strip(), cnic, contact_number))
+    try:
+        ok = db.execute(insert_sql, (full_name.strip(), cnic, contact_number))
+    except Exception as e:
+        raise ValueError(f"Database error when inserting visitor: {e}")
+
     if not ok:
-        return None
+        raise ValueError("Failed to insert visitor")
 
     row = db.fetchone("SELECT visitor_id FROM Visitors WHERE cnic = %s", (cnic,))
     return row["visitor_id"] if row else None
@@ -42,15 +50,39 @@ def search_visitor(*, cnic: Optional[str] = None, visitor_id: Optional[int] = No
     """
     Look up a visitor either by CNIC or by visitor_id.
     """
+    row = None
     if cnic:
-        return db.fetchone("SELECT * FROM Visitors WHERE cnic = %s", (cnic,))
+        row = db.fetchone("SELECT * FROM Visitors WHERE cnic = %s", (cnic,))
     if visitor_id:
-        return db.fetchone("SELECT * FROM Visitors WHERE visitor_id = %s", (visitor_id,))
+        row = db.fetchone("SELECT * FROM Visitors WHERE visitor_id = %s", (visitor_id,))
+
+    if not row:
+        return None
+
+    # Normalize datetime fields to ISO strings
+    for dt_field in ('created_at',):
+        if row.get(dt_field):
+            try:
+                row[dt_field] = row[dt_field].isoformat()
+            except Exception:
+                row[dt_field] = None
+    return row
     return None
 
 
 def list_visitors() -> List[Dict]:
     """Return all visitors (most recent first)."""
-    return db.fetchall("SELECT * FROM Visitors ORDER BY visitor_id DESC")
+    rows = db.fetchall("SELECT * FROM Visitors ORDER BY visitor_id DESC")
+    processed = []
+    for r in rows or []:
+        r_copy = dict(r)
+        # No datetime fields currently except potential created_at
+        if r_copy.get('created_at'):
+            try:
+                r_copy['created_at'] = r_copy['created_at'].isoformat()
+            except Exception:
+                r_copy['created_at'] = None
+        processed.append(r_copy)
+    return processed
 
 

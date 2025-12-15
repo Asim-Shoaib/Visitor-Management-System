@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error
+from mysql.connector import pooling
 import configparser
 import os
 import logging
@@ -19,8 +20,9 @@ class Database:
         self.password = config.get('database', 'password')
         self.database = config.get('database', 'database')
 
-        self.conn = None
-        self.cursor = None
+        self.pool = None
+        self.last_error = None
+        # Create a connection pool for thread-safe, concurrent usage
         self.connect()
 
     def connect(self):
@@ -43,22 +45,51 @@ class Database:
                 connect_params['ssl_verify_cert'] = False
                 connect_params['ssl_verify_identity'] = False
 
-            self.conn = mysql.connector.connect(**connect_params)
-            if self.conn.is_connected():
-                self.cursor = self.conn.cursor(dictionary=True, buffered=True)
-                logger.info(f"Database connected successfully to {self.database} @ {self.host}:{self.port}")
+            # Use a connection pool rather than a single shared connection to avoid
+            # concurrent access issues and random disconnects under load.
+            pool_name = 'vms_pool'
+            pool_size = 5
+            self.pool = pooling.MySQLConnectionPool(pool_name=pool_name, pool_size=pool_size, **connect_params)
+            # Test a connection from the pool
+            conn = self.pool.get_connection()
+            if conn.is_connected():
+                conn.close()
+                logger.info(f"Database pool created successfully to {self.database} @ {self.host}:{self.port} (pool_size={pool_size})")
         except Error as e:
-            logger.error(f"Database connection failed: {str(e)}")
-            self.conn = None
-            self.cursor = None
+            logger.exception(f"Database connection failed: {str(e)}")
+            self.last_error = e
+            self.pool = None
         except Exception as e:
-            logger.error(f"Database connection error: {str(e)}")
-            self.conn = None
-            self.cursor = None
+            logger.exception(f"Database connection error: {str(e)}")
+            self.last_error = e
+            self.pool = None
+
+    def _get_conn_cursor(self):
+        """Get a connection and cursor from the pool. Caller must close the cursor and connection."""
+        if not self.pool:
+            self.connect()
+            if not self.pool:
+                raise Exception("Database pool not available")
+
+        conn = self.pool.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        return conn, cursor
+
+    def ensure_connected_or_raise(self):
+        """Ensure we have a working connection or raise an informative error."""
+        try:
+            self._ensure_connection()
+        except Exception as e:
+            raise
+
+        if not self.conn or not self.conn.is_connected():
+            err = self.last_error if self.last_error is not None else Exception("Unable to connect to database")
+            raise Exception(f"Database connection unavailable: {err}")
 
     def _ensure_connection(self):
+        # For pool-based connections, ensure pool exists
         try:
-            if self.conn is None or not self.conn.is_connected():
+            if self.pool is None:
                 self.connect()
         except Exception:
             try:
@@ -67,52 +98,89 @@ class Database:
                 pass
 
     def execute(self, sql, params=None):
+        conn = None
+        cursor = None
+        import time
         try:
             self._ensure_connection()
-            if not self.conn or not self.cursor:
-                return False
-
-            self.cursor.execute(sql, params or ())
-            self.conn.commit()
+            conn, cursor = self._get_conn_cursor()
+            start = time.time()
+            cursor.execute(sql, params or ())
+            duration = time.time() - start
+            if duration > 0.25:
+                logger.warning(f"Slow query detected ({duration:.3f}s): {sql}")
+            conn.commit()
             return True
         except Exception as e:
-            logger.error(f"Execute error: {str(e)}")
+            logger.exception(f"Execute error: {str(e)}")
             try:
-                if self.conn:
-                    self.conn.rollback()
+                if conn:
+                    conn.rollback()
             except Exception:
-                pass
+                logger.exception("Failed to rollback transaction")
             return False
+        finally:
+            try:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+            except Exception:
+                logger.exception("Failed to close DB resources in execute")
 
     def fetchall(self, sql, params=None):
+        conn = None
+        cursor = None
         try:
             self._ensure_connection()
-            if not self.conn or not self.cursor:
-                return []
-
-            self.cursor.execute(sql, params or ())
-            rows = self.cursor.fetchall()
+            conn, cursor = self._get_conn_cursor()
+            import time
+            start = time.time()
+            cursor.execute(sql, params or ())
+            rows = cursor.fetchall()
+            duration = time.time() - start
+            if duration > 0.25:
+                logger.warning(f"Slow query detected ({duration:.3f}s): {sql}")
             return rows if rows else []
         except Exception as e:
-            logger.error(f"Fetchall error: {str(e)}")
+            logger.exception(f"Fetchall error: {str(e)}")
             return []
+        finally:
+            try:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+            except Exception:
+                logger.exception("Failed to close DB resources in fetchall")
 
     def fetchone(self, sql, params=None):
+        conn = None
+        cursor = None
         try:
             self._ensure_connection()
-            if not self.conn or not self.cursor:
-                return None
-
-            self.cursor.execute(sql, params or ())
-            row = self.cursor.fetchone()
+            conn, cursor = self._get_conn_cursor()
+            import time
+            start = time.time()
+            cursor.execute(sql, params or ())
+            row = cursor.fetchone()
+            duration = time.time() - start
+            if duration > 0.25:
+                logger.warning(f"Slow query detected ({duration:.3f}s): {sql}")
             return row if row else None
         except Exception as e:
-            logger.error(f"Fetchone error: {str(e)}")
+            logger.exception(f"Fetchone error: {str(e)}")
             return None
+        finally:
+            try:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+            except Exception:
+                logger.exception("Failed to close DB resources in fetchone")
 
     def close(self):
-        if self.cursor:
-            self.cursor.close()
-        if self.conn and self.conn.is_connected():
-            self.conn.close()
+        # Close pool (no direct close API; clear reference)
+        self.pool = None
 

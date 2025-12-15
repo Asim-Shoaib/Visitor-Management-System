@@ -19,45 +19,61 @@ def create_visit(
     Returns visit_id on success, None on failure.
     """
     # Validate visitor exists
-    visitor = db.fetchone("SELECT visitor_id FROM visitors WHERE visitor_id = %s", (visitor_id,))
+    try:
+        visitor = db.fetchone("SELECT visitor_id FROM Visitors WHERE visitor_id = %s", (visitor_id,))
+    except Exception as e:
+        raise ValueError(f"Database error when validating visitor: {e}")
     if not visitor:
-        return None
-    
+        raise ValueError("Visitor not found")
+
     # Validate site exists
-    site = db.fetchone("SELECT site_id FROM sites WHERE site_id = %s", (site_id,))
+    try:
+        site = db.fetchone("SELECT site_id FROM Sites WHERE site_id = %s", (site_id,))
+    except Exception as e:
+        raise ValueError(f"Database error when validating site: {e}")
     if not site:
-        return None
-    
+        raise ValueError("Site not found")
+
     # Validate host employee if provided
     if host_employee_id:
-        employee = db.fetchone("SELECT employee_id FROM employees WHERE employee_id = %s", (host_employee_id,))
+        try:
+            employee = db.fetchone("SELECT employee_id FROM Employees WHERE employee_id = %s", (host_employee_id,))
+        except Exception as e:
+            raise ValueError(f"Database error when validating host employee: {e}")
         if not employee:
-            return None
+            raise ValueError("Host employee not found")
     
     # Check if visitor already has an active visit (pending or checked_in)
-    active_visit = db.fetchone("""
-        SELECT visit_id FROM visits 
-        WHERE visitor_id = %s AND status IN ('pending', 'checked_in')
-    """, (visitor_id,))
+    try:
+        active_visit = db.fetchone("""
+            SELECT visit_id FROM Visits 
+            WHERE visitor_id = %s AND status IN ('pending', 'checked_in')
+        """, (visitor_id,))
+    except Exception as e:
+        raise ValueError(f"Database error when checking active visits: {e}")
     if active_visit:
-        return None
+        raise ValueError("Visitor already has an active visit")
     
     # Insert visit
     insert_sql = """
         INSERT INTO visits (visitor_id, site_id, host_employee_id, purpose_details, status)
         VALUES (%s, %s, %s, %s, 'pending')
     """
-    success = db.execute(insert_sql, (visitor_id, site_id, host_employee_id, purpose_details))
-    
+    try:
+        success = db.execute(insert_sql, (visitor_id, site_id, host_employee_id, purpose_details))
+    except Exception as e:
+        # Ensure no partial data remains
+        raise ValueError(f"Database error when creating visit: {e}")
+
     if success:
-        visit = db.fetchone("SELECT visit_id FROM visits WHERE visitor_id = %s AND site_id = %s ORDER BY visit_id DESC LIMIT 1", (visitor_id, site_id))
+        visit = db.fetchone("SELECT visit_id FROM Visits WHERE visitor_id = %s AND site_id = %s ORDER BY visit_id DESC LIMIT 1", (visitor_id, site_id))
         if visit:
             visit_id = visit['visit_id']
             if requested_by_user_id:
                 log_action(requested_by_user_id, "create_visit", f"Created visit {visit_id} for visitor {visitor_id} at site {site_id}")
             return visit_id
-    
-    return None
+
+    raise ValueError("Failed to create visit")
 
 
 def update_visit_status(
@@ -154,3 +170,15 @@ def get_active_visits() -> List[Dict]:
     """)
     
     return visits if visits is not None else []
+    # Ensure datetime fields are serialized as ISO strings to avoid frontend "Invalid Date" issues
+    processed = []
+    for v in visits or []:
+        v_copy = dict(v)
+        for dt_field in ('checkin_time', 'checkout_time', 'issue_date'):
+            if v_copy.get(dt_field):
+                try:
+                    v_copy[dt_field] = v_copy[dt_field].isoformat()
+                except Exception:
+                    v_copy[dt_field] = None
+        processed.append(v_copy)
+    return processed

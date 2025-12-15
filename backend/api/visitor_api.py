@@ -19,17 +19,17 @@ class AddVisitorRequest(BaseModel):
 @router.post("/add-visitor")
 def add_visitor_endpoint(payload: AddVisitorRequest, current_user_id: int = Depends(get_current_user_id)):
     """Add a new visitor. Requires JWT authentication."""
-    visitor_id = add_visitor(
-        full_name=payload.full_name,
-        cnic=payload.cnic,
-        contact_number=payload.contact_number,
-    )
-    if not visitor_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Unable to add visitor (validation failed or CNIC already exists).",
+    try:
+        visitor_id = add_visitor(
+            full_name=payload.full_name,
+            cnic=payload.cnic,
+            contact_number=payload.contact_number,
         )
-    return {"visitor_id": visitor_id}
+        return {"visitor_id": visitor_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
 @router.get("/search-visitor")

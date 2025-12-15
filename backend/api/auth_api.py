@@ -27,7 +27,11 @@ class RegisterRequest(BaseModel):
 @router.post("/login")
 def login_endpoint(payload: LoginRequest):
     """Public login endpoint - no authentication required."""
-    user = login(payload.username, payload.password)
+    try:
+        user = login(payload.username, payload.password)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error during login: {e}")
+
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 

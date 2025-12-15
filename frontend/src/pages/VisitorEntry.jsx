@@ -268,7 +268,7 @@ const VisitorEntry = () => {
             <p><strong>Visitor Name:</strong> {qrData.visitor_name}</p>
             <p><strong>Visit ID:</strong> {qrData.visit_id}</p>
             <p><strong>QR Code Value:</strong> {qrData.code_value}</p>
-            <p><strong>Expiry Date:</strong> {new Date(qrData.expiry_date).toLocaleString()}</p>
+            <p><strong>Expiry Date:</strong> {qrData.expiry_date ? new Date(qrData.expiry_date).toLocaleString() : 'N/A'}</p>
             <p><strong>Email Sent:</strong> {qrData.email_sent ? 'Yes' : 'No'}</p>
             {qrData.download_url && (
               <a
