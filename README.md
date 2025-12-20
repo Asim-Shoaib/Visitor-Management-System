@@ -210,14 +210,26 @@ Visitor-Management-System/
 pip install -r requirements.txt
 ```
 
-2. **Create database:**
+2. **Create database and app user:**
 ```bash
-mysql -u root -p < backend/database/schema.sql
+# Log in as root
+mysql -u root -p
+
+# Then run these commands in MySQL:
+CREATE DATABASE IF NOT EXISTS Visitor_Management_System 
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'vms'@'localhost' IDENTIFIED BY 'your-strong-password';
+GRANT ALL PRIVILEGES ON Visitor_Management_System.* TO 'vms'@'localhost';
+FLUSH PRIVILEGES;
+
+# Exit MySQL and run schema
+mysql -u vms -p Visitor_Management_System < backend/database/schema.sql
 ```
 
 3. **Initialize database (optional):**
 ```bash
-mysql -u root -p < setup_database.sql
+mysql -u vms -p Visitor_Management_System < setup_database.sql
 ```
 
 4. **Configure backend:**
@@ -226,8 +238,8 @@ Edit `backend/config/config.ini`:
 [database]
 host = localhost
 port = 3306
-user = root
-password = your_password
+user = vms
+password = your-strong-password
 database = Visitor_Management_System
 
 [email]

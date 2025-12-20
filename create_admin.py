@@ -44,11 +44,11 @@ def main():
         )
 
         if success:
-            print("✓ Admin user created successfully!")
-            print("  Username: admin")
-            print("  Password: admin123")
+            print("Admin user created successfully.")
+            print("Username: admin")
+            print("Default password set. Change it after first login.")
         else:
-            print("✗ Failed to create admin user")
+            print("Failed to create admin user")
             sys.exit(1)
 
     except Exception as e:

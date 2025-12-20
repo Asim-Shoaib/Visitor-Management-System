@@ -138,7 +138,6 @@ docs/
 # DO NOT IGNORE (keep these in git)
 !/backend/src
 !/frontend/src
-!README.md
 !backend/database/schema.sql
 !setup_database.sql
 !requirements.txt

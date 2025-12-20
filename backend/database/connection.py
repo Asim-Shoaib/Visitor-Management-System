@@ -14,6 +14,9 @@ class Database:
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.ini')
         config.read(config_path)
 
+        # Keep the absolute path for clearer diagnostics on failures
+        self.config_path = os.path.abspath(config_path)
+
         self.host = config.get('database', 'host')
         self.port = config.getint('database', 'port')
         self.user = config.get('database', 'user')
@@ -36,7 +39,6 @@ class Database:
                 'autocommit': False,
                 'use_pure': True,
                 'charset': 'utf8mb4',
-                'auth_plugin': 'mysql_native_password',
             }
 
             if self.host in ('localhost', '127.0.0.1', '::1'):
@@ -56,11 +58,17 @@ class Database:
                 conn.close()
                 logger.info(f"Database pool created successfully to {self.database} @ {self.host}:{self.port} (pool_size={pool_size})")
         except Error as e:
-            logger.exception(f"Database connection failed: {str(e)}")
+            logger.exception(
+                f"Database connection failed for {self.user}@{self.host}:{self.port}/{self.database} "
+                f"(config={self.config_path}): {str(e)}"
+            )
             self.last_error = e
             self.pool = None
         except Exception as e:
-            logger.exception(f"Database connection error: {str(e)}")
+            logger.exception(
+                f"Database connection error for {self.user}@{self.host}:{self.port}/{self.database} "
+                f"(config={self.config_path}): {str(e)}"
+            )
             self.last_error = e
             self.pool = None
 
@@ -76,13 +84,23 @@ class Database:
         return conn, cursor
 
     def ensure_connected_or_raise(self):
-        """Ensure we have a working connection or raise an informative error."""
-        try:
-            self._ensure_connection()
-        except Exception as e:
-            raise
+        """Ensure we have a working connection from the pool or raise an informative error."""
+        # Ensure the pool exists
+        self._ensure_connection()
+        if not self.pool:
+            err = self.last_error if self.last_error is not None else Exception("Unable to connect to database")
+            raise Exception(f"Database connection unavailable: {err}")
 
-        if not self.conn or not self.conn.is_connected():
+        # Borrow a connection and validate it
+        try:
+            conn = self.pool.get_connection()
+            ok = conn.is_connected()
+            conn.close()
+        except Exception as e:
+            self.last_error = e
+            raise Exception(f"Database connection test failed: {e}")
+
+        if not ok:
             err = self.last_error if self.last_error is not None else Exception("Unable to connect to database")
             raise Exception(f"Database connection unavailable: {err}")
 
